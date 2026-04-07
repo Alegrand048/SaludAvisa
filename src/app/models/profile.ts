@@ -1,4 +1,4 @@
-export interface Caregiver {
+export interface Cuidador {
   id: string;
   name: string;
   role: string;
@@ -6,19 +6,24 @@ export interface Caregiver {
   emoji: string;
 }
 
-export interface NotificationPreferences {
+export interface PreferenciasNotificacion {
   medicationReminders: boolean;
   appointmentReminders: boolean;
   soundEnabled: boolean;
 }
 
-export interface UserProfile {
+export interface PerfilUsuario {
   id: string;
   name: string;
+  role: "usuario" | "familiar_cuidador";
   age: number;
   email: string;
   avatarEmoji: string;
   emergencyPhone: string;
-  caregivers: Caregiver[];
-  notifications: NotificationPreferences;
+  caregivers: Cuidador[];
+  notifications: PreferenciasNotificacion;
 }
+
+export type Caregiver = Cuidador;
+export type NotificationPreferences = PreferenciasNotificacion;
+export type UserProfile = PerfilUsuario;

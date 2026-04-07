@@ -1,4 +1,5 @@
-import { Heart, Pill, Calendar, Plus, Bell } from "lucide-react";
+import { Pill, Calendar, Plus, Bell } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { BottomNav } from "../components/BottomNav";
@@ -6,6 +7,7 @@ import { useNavigate } from "react-router";
 import { useDashboardController } from "../controllers/useDashboardController";
 import { useProfileController } from "../controllers/useProfileController";
 import { useMedicationsController } from "../controllers/useMedicationsController";
+import { useAuthSession } from "../context/AuthSessionContext";
 
 function formatAppointmentDate(dateTime: string): string {
   return new Date(dateTime).toLocaleDateString("es-ES", {
@@ -23,144 +25,232 @@ function formatAppointmentTime(dateTime: string): string {
   });
 }
 
+function formatMinutesUntil(minutes: number): string {
+  const safe = Math.max(0, minutes);
+  const hours = Math.floor(safe / 60);
+  const remainingMinutes = safe % 60;
+
+  if (hours === 0) {
+    return `${remainingMinutes} min`;
+  }
+
+  return `${hours} h ${remainingMinutes} min`;
+}
+
 export default function Home() {
   const navigate = useNavigate();
-  const { nextMedication, nextAppointment, refresh } = useDashboardController();
+  const { nextMedication, nextAppointment, refresh, isLoading } = useDashboardController();
   const { profile } = useProfileController();
-  const { markAsTaken } = useMedicationsController();
+  const { markAsTaken, medications } = useMedicationsController();
+  const { isCaregiverRole } = useAuthSession();
+  const [markingTaken, setMarkingTaken] = useState(false);
+  const displayInitial = (profile.name ?? "?").trim().charAt(0).toUpperCase() || "?";
 
-  const handleMarkAsTaken = () => {
+  const lowStockMedications = medications.filter((medication) => medication.stock < 5);
+
+  const handleMarkAsTaken = async () => {
     if (!nextMedication) {
       return;
     }
-    markAsTaken(nextMedication.medication.id);
-    refresh();
+
+    try {
+      setMarkingTaken(true);
+      await markAsTaken(nextMedication.medication.id);
+      refresh();
+    } finally {
+      setMarkingTaken(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white pb-24">
-      {/* Header */}
-      <div className="bg-white shadow-sm p-6">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex items-center justify-between">
+    <div className="app-shell">
+      <div className="app-header-glass px-4 py-4 sm:px-6">
+        <div className="mx-auto max-w-2xl">
+          <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="size-14 bg-green-100 rounded-full flex items-center justify-center">
-                <Heart className="size-8 text-green-600" fill="currentColor" />
+              <div className="size-14 rounded-[1.15rem] bg-primary/12 text-primary border border-primary/15 shadow-sm flex items-center justify-center">
+                <span className="text-2xl font-bold tracking-tight">{displayInitial}</span>
               </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-800">Hola, {profile.name}</h1>
-                <p className="text-lg text-gray-600">¿Cómo te encuentras hoy?</p>
+              <div className="space-y-1">
+                <span className="eyebrow-chip">SaludAvisa</span>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[2.15rem]">Hola, {profile.name}</h1>
+                {isCaregiverRole ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <span className="status-chip status-chip--positive">Panel de cuidador</span>
+                    <span className="status-chip status-chip--muted">Resumen de hoy</span>
+                  </div>
+                ) : null}
               </div>
             </div>
             <button
-              className="size-12 bg-blue-100 rounded-full flex items-center justify-center"
+              className="size-12 rounded-2xl border border-border/70 bg-card/90 text-foreground shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-secondary/80 flex items-center justify-center"
               onClick={() => navigate("/profile")}
+              aria-label="Ir a perfil"
             >
-              <Bell className="size-6 text-blue-600" />
+              <Bell className="size-6" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
-        {/* Próxima medicación */}
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Pill className="size-7 text-blue-600" />
+      <div className="app-main">
+        <section className="space-y-3">
+          <h2 className="section-title flex items-center gap-2">
+            <Pill className="size-6 text-primary" />
             Próxima medicación
           </h2>
-          <Card className="p-6 bg-gradient-to-br from-blue-100 to-blue-50 border-2 border-blue-300 shadow-lg">
-            {nextMedication ? (
-              <>
-                <div className="flex items-center justify-between">
+          <Card className="app-page-card p-5 sm:p-6 border-0">
+            {isLoading ? (
+              <div className="space-y-4">
+                <div className="h-6 w-40 rounded-full bg-primary/10 animate-pulse" />
+                <div className="h-4 w-28 rounded-full bg-primary/10 animate-pulse" />
+                <div className="h-12 w-full rounded-2xl bg-primary/10 animate-pulse" />
+              </div>
+            ) : nextMedication ? (
+              <div className="space-y-5">
+                <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
-                    <h3 className="text-3xl font-bold text-gray-800">{nextMedication.medication.name}</h3>
-                    <p className="text-2xl text-gray-700">{nextMedication.medication.dosage}</p>
-                    <p className="text-xl font-semibold text-blue-700 mt-3">
-                      🕐 En {nextMedication.minutesUntil} minutos - {nextMedication.timeLabel}
-                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={nextMedication.isLate ? "status-chip status-chip--warning" : "status-chip status-chip--positive"}>
+                        {nextMedication.isLate ? "Toma retrasada" : "Próxima toma"}
+                      </span>
+                      <span className="status-chip status-chip--muted">{nextMedication.timeLabel}</span>
+                    </div>
+                    <h3 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[2.1rem]">{nextMedication.medication.name}</h3>
+                    <p className="text-lg text-muted-foreground sm:text-xl">{nextMedication.medication.dosage}</p>
                   </div>
-                  <div className="size-20 bg-white rounded-full flex items-center justify-center shadow-md">
-                    <Pill className="size-10 text-blue-600" />
+                  <div className="size-16 rounded-[1.4rem] bg-primary/10 text-primary flex items-center justify-center shadow-sm shrink-0">
+                    <Pill className="size-8" />
                   </div>
                 </div>
+
+                <div className="rounded-[1.35rem] border border-border/70 bg-background/70 p-4">
+                  <p className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Cuenta regresiva</p>
+                  <p className={`mt-2 text-2xl font-semibold tracking-tight ${nextMedication.isLate ? "text-destructive" : "text-primary"}`}>
+                    {nextMedication.isLate
+                      ? `Llega tarde por ${formatMinutesUntil(nextMedication.lateMinutes)}`
+                      : `En ${formatMinutesUntil(nextMedication.minutesUntil)}`}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {nextMedication.isLate ? "Conviene marcarla cuanto antes." : "Todo está dentro de la franja prevista."}
+                  </p>
+                </div>
+
                 <Button
                   size="lg"
-                  className="w-full h-14 text-xl font-bold mt-4 bg-blue-600 hover:bg-blue-700"
-                  onClick={handleMarkAsTaken}
+                  className={`w-full h-14 text-base font-semibold rounded-2xl ${nextMedication.isLate ? "bg-destructive hover:bg-destructive/90" : "bg-primary hover:bg-primary/90"}`}
+                  disabled={markingTaken}
+                  onClick={() => {
+                    void handleMarkAsTaken();
+                  }}
                 >
-                  ✓ Marcar como tomado
+                  {markingTaken ? "Guardando toma..." : "Marcar como tomado"}
                 </Button>
-              </>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-xl font-semibold text-gray-700">No hay medicacion programada</p>
               </div>
-            )}
+            ) : !isLoading ? (
+              <div className="grid place-items-center gap-2 rounded-[1.35rem] border border-dashed border-border/70 bg-background/50 py-10 text-center">
+                <Pill className="size-8 text-muted-foreground" />
+                <p className="text-lg font-semibold text-foreground">No hay medicación programada</p>
+                <p className="text-sm text-muted-foreground">Cuando añadas una pauta, aparecerá aquí el siguiente paso.</p>
+              </div>
+            ) : null}
           </Card>
-        </div>
+        </section>
 
-        {/* Próxima cita */}
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Calendar className="size-7 text-green-600" />
+        <section className="space-y-3">
+          <h2 className="section-title flex items-center gap-2">
+            <Calendar className="size-6 text-primary" />
             Próxima cita médica
           </h2>
-          <Card className="p-6 bg-gradient-to-br from-green-100 to-green-50 border-2 border-green-300 shadow-lg">
+          <Card className="app-page-card p-5 sm:p-6 border-0">
             {nextAppointment ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-3xl font-bold text-gray-800">{nextAppointment.specialty}</h3>
-                  <div className="size-16 bg-white rounded-full flex items-center justify-center shadow-md">
-                    <span className="text-3xl">{nextAppointment.emoji}</span>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-2">
+                    <span className="status-chip status-chip--muted">{formatAppointmentDate(nextAppointment.dateTime)}</span>
+                    <h3 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[2.1rem]">{nextAppointment.specialty}</h3>
+                    <p className="text-lg text-muted-foreground sm:text-xl">{nextAppointment.doctor}</p>
+                  </div>
+                  <div className="size-16 rounded-[1.4rem] bg-secondary/60 flex items-center justify-center shadow-sm shrink-0 text-3xl">
+                    {nextAppointment.emoji}
                   </div>
                 </div>
-                <div className="space-y-2 text-xl text-gray-700">
-                  <p className="font-semibold">📅 {formatAppointmentDate(nextAppointment.dateTime)}</p>
-                  <p className="font-semibold">🕐 {formatAppointmentTime(nextAppointment.dateTime)}</p>
-                  <p>📍 {nextAppointment.location}</p>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-[1.15rem] border border-border/70 bg-background/70 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Fecha</p>
+                    <p className="mt-1 text-base font-semibold text-foreground">{formatAppointmentDate(nextAppointment.dateTime)}</p>
+                  </div>
+                  <div className="rounded-[1.15rem] border border-border/70 bg-background/70 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Hora</p>
+                    <p className="mt-1 text-base font-semibold text-foreground">{formatAppointmentTime(nextAppointment.dateTime)}</p>
+                  </div>
+                  <div className="rounded-[1.15rem] border border-border/70 bg-background/70 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Lugar</p>
+                    <p className="mt-1 text-base font-semibold text-foreground">{nextAppointment.location}</p>
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="text-center py-4">
-                <p className="text-xl font-semibold text-gray-700">No hay citas pendientes</p>
+              <div className="grid place-items-center gap-2 rounded-[1.35rem] border border-dashed border-border/70 bg-background/50 py-10 text-center">
+                <Calendar className="size-8 text-muted-foreground" />
+                <p className="text-lg font-semibold text-foreground">No hay citas pendientes</p>
+                <p className="text-sm text-muted-foreground">Las citas compartidas aparecerán aquí como recordatorios.</p>
               </div>
             )}
           </Card>
-        </div>
+        </section>
 
-        {/* Acciones rápidas */}
-        <div className="grid grid-cols-2 gap-4 pt-4">
+        <section className="grid grid-cols-2 gap-3">
           <Button
             onClick={() => navigate("/medications")}
             size="lg"
             variant="outline"
-            className="h-24 flex-col gap-2 text-lg font-bold border-2 hover:bg-blue-50"
+            className="h-24 flex-col gap-2 rounded-[1.35rem] border-border/70 bg-card/85 text-sm font-semibold shadow-sm hover:bg-secondary/70"
           >
-            <Plus className="size-8" />
-            Añadir medicación
+            <Plus className="size-7" />
+            {isCaregiverRole ? "Añadir medicación" : "Ver medicación"}
           </Button>
 
           <Button
             onClick={() => navigate("/appointments")}
             size="lg"
             variant="outline"
-            className="h-24 flex-col gap-2 text-lg font-bold border-2 hover:bg-green-50"
+            className="h-24 flex-col gap-2 rounded-[1.35rem] border-border/70 bg-card/85 text-sm font-semibold shadow-sm hover:bg-secondary/70"
           >
-            <Plus className="size-8" />
-            Añadir cita
+            <Plus className="size-7" />
+            {isCaregiverRole ? "Añadir cita" : "Ver citas"}
           </Button>
-        </div>
+        </section>
 
-        {/* Recordatorio amigable */}
-        <Card className="p-6 bg-gradient-to-br from-purple-100 to-pink-50 border-2 border-purple-200">
-          <div className="flex items-center gap-4">
-            <span className="text-4xl">💡</span>
-            <div>
-              <p className="text-xl font-semibold text-gray-800">Consejo del día</p>
-              <p className="text-lg text-gray-700 mt-1">
-                Recuerda tomar tus medicinas con un vaso de agua lleno
+        {lowStockMedications.length > 0 ? (
+          <Card className="app-page-card border-0 bg-gradient-to-br from-amber-100/80 to-orange-50/90 p-5">
+            <div className="flex items-start gap-3">
+              <div className="size-12 rounded-2xl bg-white/80 flex items-center justify-center shadow-sm shrink-0">
+                <span className="text-2xl">⚠</span>
+              </div>
+              <div className="space-y-1">
+                <p className="text-base font-semibold text-amber-950">Stock bajo detectado</p>
+                <p className="text-sm text-amber-900/90">
+                  {lowStockMedications.length} medicamento(s) están por debajo de 5 unidades.
+                </p>
+                <p className="text-sm text-amber-950/90">
+                  {lowStockMedications.slice(0, 3).map((item) => `${item.name} (${item.stock})`).join(" · ")}
+                </p>
+              </div>
+            </div>
+          </Card>
+        ) : null}
+
+        <Card className="app-page-card border-0 bg-gradient-to-br from-slate-50 to-primary/5 p-5">
+          <div className="flex items-start gap-3">
+            <div className="size-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+              <span className="text-2xl">💡</span>
+            </div>
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-foreground">Consejo del día</p>
+              <p className="text-sm text-muted-foreground">
+                Tómate un momento para revisar la próxima toma y evita que se acumulen recordatorios.
               </p>
             </div>
           </div>

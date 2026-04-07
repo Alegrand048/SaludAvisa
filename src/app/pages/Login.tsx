@@ -29,110 +29,109 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-green-50 flex flex-col p-6">
-      {/* Botón volver */}
-      <button
-        onClick={() => navigate("/")}
-        className="flex items-center gap-2 text-gray-600 mb-6 text-xl"
-      >
-        <ArrowLeft className="size-6" />
-        Volver
-      </button>
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-b from-sky-50 via-white to-emerald-50">
+      <div className="absolute -top-24 left-[-4rem] size-64 rounded-full bg-sky-200/40 blur-3xl" />
+      <div className="absolute bottom-0 right-[-5rem] size-72 rounded-full bg-emerald-200/40 blur-3xl" />
 
-      <div className="flex-1 flex flex-col items-center justify-center max-w-md w-full mx-auto">
-        {/* Logo */}
-        <div className="flex justify-center mb-6">
-          <div className="size-24 bg-white rounded-full shadow-lg flex items-center justify-center">
-            <Heart className="size-12 text-green-500" fill="currentColor" />
-          </div>
-        </div>
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-5 sm:px-6 sm:py-8">
+        <button
+          onClick={() => navigate("/")}
+          className="mb-4 inline-flex items-center gap-2 self-start rounded-full border border-border/70 bg-card/80 px-3 py-2 text-sm font-semibold text-foreground shadow-sm backdrop-blur"
+        >
+          <ArrowLeft className="size-5" />
+          Volver
+        </button>
 
-        {/* Título */}
-        <h1 className="text-4xl font-bold text-gray-800 mb-2">Bienvenido</h1>
-        <p className="text-xl text-gray-600 mb-8">Inicia sesión en tu cuenta</p>
-
-        {/* Formulario */}
-        <form onSubmit={handleSubmit} className="w-full space-y-6">
-          <div className="space-y-3">
-            <Label htmlFor="email" className="text-xl font-semibold text-gray-700">
-              Correo electrónico
-            </Label>
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 size-6 text-gray-400" />
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onFocus={clearFeedback}
-                placeholder="ejemplo@correo.com"
-                className="h-16 pl-14 text-xl border-2"
-                required
-              />
+        <div className="flex-1 flex flex-col justify-center">
+          <div className="app-page-card p-5 sm:p-7">
+            <div className="flex justify-center mb-5">
+              <div className="size-20 rounded-[1.7rem] border border-primary/10 bg-primary/8 shadow-sm flex items-center justify-center">
+                <Heart className="size-10 text-primary" fill="currentColor" />
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-3">
-            <Label htmlFor="password" className="text-xl font-semibold text-gray-700">
-              Contraseña
-            </Label>
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 size-6 text-gray-400" />
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onFocus={clearFeedback}
-                placeholder="••••••••"
-                className="h-16 pl-14 pr-14 text-xl border-2"
-                required
-              />
+            <div className="space-y-2 text-center">
+              <span className="eyebrow-chip">Acceso seguro</span>
+              <h1 className="text-3xl font-semibold tracking-tight text-foreground">Bienvenido de nuevo</h1>
+              <p className="text-sm text-muted-foreground sm:text-base">Inicia sesión para revisar recordatorios y cuidados.</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="w-full space-y-5 mt-7">
+              <div className="space-y-3">
+                <Label htmlFor="email" className="text-sm font-semibold text-foreground">
+                  Correo electrónico
+                </Label>
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onFocus={clearFeedback}
+                    placeholder="ejemplo@correo.com"
+                    className="h-14 rounded-[1.25rem] border-border/70 bg-background pl-12 pr-4 text-base"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="password" className="text-sm font-semibold text-foreground">
+                  Contraseña
+                </Label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onFocus={clearFeedback}
+                    placeholder="••••••••"
+                    className="h-14 rounded-[1.25rem] border-border/70 bg-background pl-12 pr-12 text-base"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-secondary/70 p-2 text-muted-foreground"
+                  >
+                    {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                  </button>
+                </div>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"
+                onClick={handleResetPassword}
+                disabled={isLoading || !email}
+                className="text-left text-sm font-semibold text-primary underline decoration-primary/30 underline-offset-4 disabled:opacity-50"
               >
-                {showPassword ? (
-                  <EyeOff className="size-6" />
-                ) : (
-                  <Eye className="size-6" />
-                )}
+                ¿Olvidaste tu contraseña?
               </button>
-            </div>
+
+              {error ? <p className="text-sm font-semibold text-destructive">{error}</p> : null}
+              {message ? <p className="text-sm font-semibold text-emerald-700">{message}</p> : null}
+
+              <Button
+                type="submit"
+                size="lg"
+                disabled={isLoading}
+                className="w-full h-14 rounded-[1.35rem] bg-primary text-base font-semibold shadow-sm hover:bg-primary/90"
+              >
+                {isLoading ? "Entrando..." : "Iniciar sesión"}
+              </Button>
+            </form>
+
+            <p className="mt-5 text-center text-sm text-muted-foreground">
+              ¿No tienes cuenta?{" "}
+              <button className="font-semibold text-primary underline decoration-primary/30 underline-offset-4" onClick={() => navigate("/register")}>
+                Regístrate aquí
+              </button>
+            </p>
           </div>
-
-          <button
-            type="button"
-            onClick={handleResetPassword}
-            disabled={isLoading || !email}
-            className="text-lg text-blue-600 font-semibold underline"
-          >
-            ¿Olvidaste tu contraseña?
-          </button>
-
-          {error ? <p className="text-base text-red-600 font-semibold">{error}</p> : null}
-          {message ? <p className="text-base text-green-700 font-semibold">{message}</p> : null}
-
-          <Button
-            type="submit"
-            size="lg"
-            disabled={isLoading}
-            className="w-full h-16 text-2xl font-bold bg-blue-600 hover:bg-blue-700 shadow-lg mt-8"
-          >
-            {isLoading ? "Entrando..." : "Iniciar sesión"}
-          </Button>
-        </form>
-
-        <p className="text-lg text-gray-600 mt-6">
-          ¿No tienes cuenta?{" "}
-          <button
-            className="text-blue-600 font-semibold underline"
-            onClick={() => navigate("/register")}
-          >
-            Regístrate aquí
-          </button>
-        </p>
+        </div>
       </div>
     </div>
   );

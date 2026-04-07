@@ -1,67 +1,280 @@
 import { Appointment } from "../models/appointment";
 import { readFromStorage, writeToStorage } from "./storage";
+import { supabase } from "./supabaseClient";
 
-const STORAGE_KEY = "saludavisa.appointments";
+const CLAVE_ALMACENAMIENTO = "saludavisa.appointments";
+const SHARED_TABLE = "citas_familia_compartidas";
+const LEGACY_DEMO_APPOINTMENT_IDS = new Set(["1", "2", "3"]);
+const LEGACY_DEMO_APPOINTMENT_SPECIALTIES = new Set([
+  "cardiologia",
+  "oftalmologia",
+  "traumatologia",
+]);
 
-const seedAppointments: Appointment[] = [
-  {
-    id: "1",
-    specialty: "Cardiologia",
-    dateTime: "2026-03-31T10:30:00",
-    location: "Centro Medico San Juan",
-    doctor: "Dr. Garcia Lopez",
-    emoji: "❤️",
-    color: "from-red-100 to-red-50",
-  },
-  {
-    id: "2",
-    specialty: "Oftalmologia",
-    dateTime: "2026-04-02T15:00:00",
-    location: "Clinica Vista Clara",
-    doctor: "Dra. Martinez Ruiz",
-    emoji: "👁️",
-    color: "from-blue-100 to-blue-50",
-  },
-  {
-    id: "3",
-    specialty: "Traumatologia",
-    dateTime: "2026-04-11T11:00:00",
-    location: "Hospital Central",
-    doctor: "Dr. Rodriguez Perez",
-    emoji: "🦴",
-    color: "from-green-100 to-green-50",
-  },
-];
-
-function getStoredAppointments(): Appointment[] {
-  return readFromStorage<Appointment[]>(STORAGE_KEY, seedAppointments)
-    .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+interface SharedAppointmentRow {
+  id: string;
+  creador_usuario_id: string;
+  cliente_email: string;
+  especialidad: string;
+  fecha_hora: string;
+  ubicacion: string;
+  medico: string;
+  emoji: string;
+  color: string;
+  activa: boolean;
 }
 
-function saveAppointments(appointments: Appointment[]): void {
-  writeToStorage(STORAGE_KEY, appointments);
+interface AuthUserContext {
+  id: string;
+  email: string;
+  role: string;
 }
 
-export const appointmentService = {
-  getAll(): Appointment[] {
-    return getStoredAppointments();
+const citasSemilla: Appointment[] = [];
+
+function isLegacyDemoAppointment(cita: Appointment): boolean {
+  return (
+    LEGACY_DEMO_APPOINTMENT_IDS.has(cita.id) ||
+    LEGACY_DEMO_APPOINTMENT_SPECIALTIES.has(cita.specialty.trim().toLowerCase())
+  );
+}
+
+function obtenerCitasAlmacenadas(): Appointment[] {
+  const loaded = readFromStorage<Appointment[]>(CLAVE_ALMACENAMIENTO, citasSemilla);
+  const cleaned = loaded.filter((cita) => !isLegacyDemoAppointment(cita));
+
+  if (cleaned.length !== loaded.length) {
+    writeToStorage(CLAVE_ALMACENAMIENTO, cleaned);
+  }
+
+  return cleaned.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+}
+
+function guardarCitas(citas: Appointment[]): void {
+  writeToStorage(CLAVE_ALMACENAMIENTO, citas);
+}
+
+function obtenerCitasLocales(): Appointment[] {
+  return obtenerCitasAlmacenadas().filter((cita) => !cita.id.startsWith("shared-"));
+}
+
+function dedupeAppointments(items: Appointment[]): Appointment[] {
+  return Array.from(new Map(items.map((item) => [item.id, item])).values());
+}
+
+function rowToAppointment(row: SharedAppointmentRow): Appointment {
+  return {
+    id: `shared-${row.id}`,
+    specialty: row.especialidad,
+    dateTime: row.fecha_hora,
+    location: row.ubicacion,
+    doctor: row.medico,
+    emoji: row.emoji,
+    color: row.color,
+  };
+}
+
+function appointmentToSharedInsert(userId: string, clientEmail: string, appointment: Omit<Appointment, "id">) {
+  return {
+    creador_usuario_id: userId,
+    cliente_email: clientEmail.trim().toLowerCase(),
+    especialidad: appointment.specialty,
+    fecha_hora: appointment.dateTime,
+    ubicacion: appointment.location,
+    medico: appointment.doctor,
+    emoji: appointment.emoji,
+    color: appointment.color,
+    activa: true,
+  };
+}
+
+async function getCurrentUserContext(): Promise<AuthUserContext | null> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user?.id || !data.user.email) {
+    return null;
+  }
+
+  return {
+    id: data.user.id,
+    email: data.user.email.toLowerCase(),
+    role: String(data.user.user_metadata?.role ?? "usuario"),
+  };
+}
+
+async function getSharedForClient(clientEmail: string): Promise<Appointment[]> {
+  const { data, error } = await supabase
+    .from(SHARED_TABLE)
+    .select("id, cliente_email, especialidad, fecha_hora, ubicacion, medico, emoji, color, activa")
+    .eq("cliente_email", clientEmail.toLowerCase())
+    .eq("activa", true)
+    .order("fecha_hora", { ascending: true });
+
+  if (error || !data) {
+    return [];
+  }
+
+  return (data as SharedAppointmentRow[]).map(rowToAppointment);
+}
+
+async function getSharedCreatedByUser(userId: string): Promise<Appointment[]> {
+  const { data, error } = await supabase
+    .from(SHARED_TABLE)
+    .select("id, creador_usuario_id, cliente_email, especialidad, fecha_hora, ubicacion, medico, emoji, color, activa")
+    .eq("creador_usuario_id", userId)
+    .eq("activa", true)
+    .order("fecha_hora", { ascending: true });
+
+  if (error || !data) {
+    return [];
+  }
+
+  return (data as SharedAppointmentRow[]).map(rowToAppointment);
+}
+
+async function getAllFromRemoteOrLocal(): Promise<Appointment[]> {
+  const user = await getCurrentUserContext();
+  if (!user) {
+    return obtenerCitasLocales();
+  }
+
+  const isClientRole = user.role === "usuario";
+  const sharedRows = isClientRole ? await getSharedForClient(user.email) : await getSharedCreatedByUser(user.id);
+  const localRows = obtenerCitasLocales();
+  const combined = dedupeAppointments([...localRows, ...sharedRows]);
+
+  if (localRows.length !== obtenerCitasAlmacenadas().length) {
+    guardarCitas(localRows);
+  }
+
+  return combined;
+}
+
+export const servicioCitas = {
+  obtenerTodas(): Appointment[] {
+    return obtenerCitasLocales();
   },
 
-  getNext(now: Date = new Date()): Appointment | null {
-    return getStoredAppointments().find((appointment) => new Date(appointment.dateTime) >= now) ?? null;
+  obtenerProxima(ahora: Date = new Date()): Appointment | null {
+    return obtenerCitasLocales().find((cita) => new Date(cita.dateTime) >= ahora) ?? null;
   },
 
-  add(appointment: Appointment): Appointment[] {
-    const updated = [...getStoredAppointments(), appointment].sort(
+  agregar(cita: Appointment): Appointment[] {
+    const actualizadas = [...obtenerCitasLocales(), cita].sort(
       (a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime(),
     );
-    saveAppointments(updated);
-    return updated;
+    guardarCitas(actualizadas);
+    return actualizadas;
   },
 
-  remove(id: string): Appointment[] {
-    const updated = getStoredAppointments().filter((appointment) => appointment.id !== id);
-    saveAppointments(updated);
-    return updated;
+  eliminar(id: string): Appointment[] {
+    const actualizadas = obtenerCitasLocales().filter((cita) => cita.id !== id);
+    guardarCitas(actualizadas);
+    return actualizadas;
   },
+
+  async obtenerTodasAsync(): Promise<Appointment[]> {
+    return getAllFromRemoteOrLocal();
+  },
+
+  async agregarAsync(cita: Omit<Appointment, "id">, targetClientEmail?: string): Promise<Appointment[]> {
+    const crearLocal = () => {
+      const local: Appointment = {
+        ...cita,
+        id: crypto.randomUUID(),
+      };
+      return servicioCitas.agregar(local);
+    };
+
+    if (!targetClientEmail?.trim()) {
+      return crearLocal();
+    }
+
+    const user = await getCurrentUserContext();
+    if (!user) {
+      return crearLocal();
+    }
+
+    const { error } = await supabase
+      .from(SHARED_TABLE)
+      .insert(appointmentToSharedInsert(user.id, targetClientEmail, cita));
+
+    if (error) {
+      return crearLocal();
+    }
+
+    return getAllFromRemoteOrLocal();
+  },
+
+  async actualizarAsync(id: string, updates: Partial<Omit<Appointment, "id">>): Promise<Appointment[]> {
+    const isShared = id.startsWith("shared-");
+    
+    if (isShared) {
+      // Update in Supabase
+      const sharedId = id.replace("shared-", "");
+      const updatePayload: Record<string, unknown> = {
+        actualizado_en: new Date().toISOString(),
+      };
+      
+      if (updates.specialty !== undefined) updatePayload.especialidad = updates.specialty;
+      if (updates.dateTime !== undefined) updatePayload.fecha_hora = updates.dateTime;
+      if (updates.location !== undefined) updatePayload.ubicacion = updates.location;
+      if (updates.doctor !== undefined) updatePayload.medico = updates.doctor;
+      
+      const { error } = await supabase
+        .from(SHARED_TABLE)
+        .update(updatePayload)
+        .eq("id", sharedId);
+      
+      if (error) {
+        console.error("Error updating shared appointment:", error);
+        throw new Error(`No se pudo actualizar la cita: ${error.message}`);
+      }
+    } else {
+      // Update in local storage
+      const actualizadas = obtenerCitasLocales().map((cita) =>
+        cita.id === id ? { ...cita, ...updates } : cita
+      );
+      guardarCitas(actualizadas);
+    }
+    
+    return getAllFromRemoteOrLocal();
+  },
+
+  async eliminarAsync(id: string): Promise<Appointment[]> {
+    const isShared = id.startsWith("shared-");
+    
+    if (isShared) {
+      // Mark as inactive in Supabase
+      const sharedId = id.replace("shared-", "");
+      const { error } = await supabase
+        .from(SHARED_TABLE)
+        .update({ 
+          activa: false,
+          actualizado_en: new Date().toISOString(),
+        })
+        .eq("id", sharedId);
+      
+      if (error) {
+        console.error("Error deleting shared appointment:", error);
+        throw new Error(`No se pudo eliminar la cita: ${error.message}`);
+      }
+    } else {
+      // Delete from local storage
+      const actualizadas = obtenerCitasLocales().filter((cita) => cita.id !== id);
+      guardarCitas(actualizadas);
+    }
+    
+    return getAllFromRemoteOrLocal();
+  },
+};
+
+export const appointmentService = {
+  getAll: servicioCitas.obtenerTodas,
+  getNext: servicioCitas.obtenerProxima,
+  add: servicioCitas.agregar,
+  remove: servicioCitas.eliminar,
+  getAllAsync: servicioCitas.obtenerTodasAsync,
+  addAsync: servicioCitas.agregarAsync,
+  updateAsync: servicioCitas.actualizarAsync,
+  deleteAsync: servicioCitas.eliminarAsync,
 };

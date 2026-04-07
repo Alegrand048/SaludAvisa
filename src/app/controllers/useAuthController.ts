@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { authService } from "../services/authService";
+import type { UserRole } from "../context/AuthSessionContext";
 
-export function useAuthController() {
+export function useControladorAutenticacion() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const clearFeedback = () => {
+  const limpiarMensajes = () => {
     setError(null);
     setMessage(null);
   };
@@ -14,7 +15,7 @@ export function useAuthController() {
   const signIn = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      clearFeedback();
+      limpiarMensajes();
       await authService.signIn(email, password);
       setMessage("Inicio de sesion correcto.");
       return true;
@@ -26,12 +27,12 @@ export function useAuthController() {
     }
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (name: string, email: string, password: string, role: UserRole) => {
     try {
       setIsLoading(true);
-      clearFeedback();
-      await authService.signUp(email, password);
-      setMessage("Cuenta creada. Revisa tu correo para confirmar el registro.");
+      limpiarMensajes();
+      await authService.signUp(name, email, password, role);
+      setMessage("Cuenta creada. Ya puedes usar la app.");
       return true;
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "No se pudo crear la cuenta.");
@@ -44,7 +45,7 @@ export function useAuthController() {
   const resetPassword = async (email: string) => {
     try {
       setIsLoading(true);
-      clearFeedback();
+      limpiarMensajes();
       await authService.resetPassword(email);
       setMessage("Te hemos enviado un correo para restablecer la contrasena.");
       return true;
@@ -56,13 +57,32 @@ export function useAuthController() {
     }
   };
 
+  const deleteAccount = async (password: string): Promise<{ ok: boolean; errorMessage?: string }> => {
+    try {
+      setIsLoading(true);
+      limpiarMensajes();
+      await authService.deleteAccount(password);
+      setMessage("Cuenta eliminada correctamente.");
+      return { ok: true };
+    } catch (authError) {
+      const errorMessage = authError instanceof Error ? authError.message : "No se pudo eliminar la cuenta.";
+      setError(errorMessage);
+      return { ok: false, errorMessage };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     isLoading,
     error,
     message,
-    clearFeedback,
+    clearFeedback: limpiarMensajes,
     signIn,
     signUp,
     resetPassword,
+    deleteAccount,
   };
 }
+
+export const useAuthController = useControladorAutenticacion;

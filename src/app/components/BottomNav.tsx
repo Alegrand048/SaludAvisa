@@ -1,4 +1,4 @@
-import { Home, Pill, User } from "lucide-react";
+import { Home, Pill, Calendar, User } from "lucide-react";
 import { useNavigate, useLocation } from "react-router";
 
 export function BottomNav() {
@@ -8,12 +8,14 @@ export function BottomNav() {
   const navItems = [
     { path: "/home", icon: Home, label: "Inicio" },
     { path: "/medications", icon: Pill, label: "Medicación" },
+    { path: "/appointments", icon: Calendar, label: "Citas" },
     { path: "/profile", icon: User, label: "Perfil" },
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
-      <div className="max-w-2xl mx-auto flex justify-around items-center py-3">
+    <nav className="app-bottom-nav">
+      <div>
+        <div className="flex items-center justify-around gap-1 px-2 py-2.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
@@ -22,17 +24,16 @@ export function BottomNav() {
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex flex-col items-center gap-1 px-6 py-2 rounded-xl transition-all ${
-                isActive
-                  ? "bg-blue-100 text-blue-700"
-                  : "text-gray-500 hover:text-gray-700"
+              className={`nav-pill flex min-w-0 flex-col items-center gap-1 ${
+                isActive ? "nav-pill--active" : "text-muted-foreground hover:text-foreground hover:bg-secondary/70"
               }`}
             >
-              <Icon className="size-8" strokeWidth={2.5} />
-              <span className="text-sm font-semibold">{item.label}</span>
+              <Icon className="size-6" strokeWidth={2.35} />
+              <span className="text-[0.7rem] font-semibold tracking-wide">{item.label}</span>
             </button>
           );
         })}
+        </div>
       </div>
     </nav>
   );

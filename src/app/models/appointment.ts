@@ -1,4 +1,4 @@
-export interface Appointment {
+export interface Cita {
   id: string;
   specialty: string;
   dateTime: string;
@@ -7,3 +7,5 @@ export interface Appointment {
   emoji: string;
   color: string;
 }
+
+export type Appointment = Cita;

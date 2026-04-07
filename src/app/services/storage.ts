@@ -1,4 +1,4 @@
-export function readFromStorage<T>(key: string, fallback: T): T {
+export function leerDesdeAlmacenamiento<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") {
     return fallback;
   }
@@ -15,9 +15,12 @@ export function readFromStorage<T>(key: string, fallback: T): T {
   }
 }
 
-export function writeToStorage<T>(key: string, value: T): void {
+export function escribirEnAlmacenamiento<T>(key: string, value: T): void {
   if (typeof window === "undefined") {
     return;
   }
   window.localStorage.setItem(key, JSON.stringify(value));
 }
+
+export const readFromStorage = leerDesdeAlmacenamiento;
+export const writeToStorage = escribirEnAlmacenamiento;

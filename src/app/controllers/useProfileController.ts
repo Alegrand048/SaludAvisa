@@ -24,7 +24,17 @@ export function useControladorPerfil() {
   const [profile, setProfile] = useState(() => profileService.get(usuario));
 
   useEffect(() => {
-    setProfile(profileService.get(usuario));
+    let mounted = true;
+    const loadProfile = async () => {
+      const loaded = await profileService.getAsync(usuario);
+      if (mounted) {
+        setProfile(loaded);
+      }
+    };
+    void loadProfile();
+    return () => {
+      mounted = false;
+    };
   }, [usuario.id, usuario.name, usuario.email, usuario.role]);
 
   const recargarPerfil = () => {
@@ -68,12 +78,27 @@ export function useControladorPerfil() {
     );
   };
 
+  const updateAppearance = async (name: string, avatarUrl?: string) => {
+    const optimistic = profileService.updateAppearance(usuario, {
+      name,
+      avatarUrl,
+    });
+    setProfile(optimistic);
+
+    const synced = await profileService.updateAppearanceAsync(usuario, {
+      name,
+      avatarUrl,
+    });
+    setProfile(synced);
+  };
+
   return {
     profile,
     toggleMedicationReminders: alternarRecordatoriosMedicacion,
     toggleAppointmentReminders: alternarRecordatoriosCitas,
     toggleSoundEnabled: alternarSonido,
     addCaregiver,
+    updateAppearance,
     refreshProfile: recargarPerfil,
   };
 }

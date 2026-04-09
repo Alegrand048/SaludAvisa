@@ -66,7 +66,9 @@ export function AddAppointmentDialog({
       return;
     }
 
-    if (showClientAssignment && !clientEmail.trim()) {
+    const requiresClientSelection = showClientAssignment && clientOptions.length > 0;
+
+    if (requiresClientSelection && !clientEmail.trim()) {
       setSubmitError("Selecciona un cliente del grupo familiar.");
       return;
     }
@@ -189,7 +191,7 @@ export function AddAppointmentDialog({
             </div>
           </div>
 
-          {showClientAssignment ? (
+          {showClientAssignment && clientOptions.length > 0 ? (
             <div className="space-y-2">
               <Label htmlFor="apt-client-email">Cliente destino</Label>
               <select
@@ -198,9 +200,7 @@ export function AddAppointmentDialog({
                 onChange={(event) => setClientEmail(event.target.value)}
                 className="h-11 w-full rounded-2xl border border-border/70 bg-background px-3 text-sm"
                 required
-                disabled={clientOptions.length === 0}
               >
-                {clientOptions.length === 0 ? <option value="">No hay clientes disponibles</option> : null}
                 {clientOptions.map((email) => (
                   <option key={email} value={email}>
                     {email}
@@ -211,6 +211,12 @@ export function AddAppointmentDialog({
                 Selecciona a qué cliente del grupo familiar asignarás esta cita.
               </p>
             </div>
+          ) : null}
+
+          {showClientAssignment && clientOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No hay clientes vinculados ahora mismo. Esta cita se guardará en tu cuenta.
+            </p>
           ) : null}
 
           {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}

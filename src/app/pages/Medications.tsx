@@ -59,6 +59,7 @@ function isMedicationAllowedOnDate(medication: { daysOfWeek?: string[]; duration
     const start = new Date(`${medication.startDate}T00:00:00`);
     const end = new Date(start);
     end.setDate(end.getDate() + medication.durationDays - 1);
+    end.setHours(23, 59, 59, 999);
     if (date < start || date > end) {
       return false;
     }
@@ -73,6 +74,22 @@ function getScheduledDoseCountForDate(medication: { times: string[]; daysOfWeek?
 
 function normalizeMedicationKey(id: string): string {
   return id.startsWith("shared-") ? id.replace("shared-", "") : id;
+}
+
+function getNextPendingDoseMinutesDiff(times: string[], takenToday: number, now: Date): number | null {
+  if (times.length === 0) {
+    return null;
+  }
+
+  const pendingTimes = [...times].sort().slice(Math.max(0, takenToday));
+  if (pendingTimes.length === 0) {
+    return null;
+  }
+
+  const [hour, minute] = pendingTimes[0].split(":").map(Number);
+  const slot = new Date(now);
+  slot.setHours(hour, minute, 0, 0);
+  return Math.round((slot.getTime() - now.getTime()) / 60000);
 }
 
 type MedicationFilter = "all" | "today" | "tomorrow" | "week";
@@ -94,6 +111,7 @@ export default function Medications() {
   const [selectedFilter, setSelectedFilter] = useState<MedicationFilter>("all");
   const { medications, count, isLoading, markAsTaken, addMedication, editMedication, removeMedication, todayTakenCountMap } = useMedicationsController();
   const { isCaregiverRole, user } = useAuthSession();
+  const availableFilters: MedicationFilter[] = isCaregiverRole ? ["all", "today", "tomorrow", "week"] : ["today", "all"];
 
   const visibleMedications = useMemo(() => {
     const now = new Date();
@@ -130,7 +148,11 @@ export default function Medications() {
         return;
       }
 
-      const group = await familyGroupService.getForUser(user.id, user.email);
+      const group = await familyGroupService.getForUser(
+        user.id,
+        user.email,
+        isCaregiverRole ? "familiar_cuidador" : "usuario",
+      );
       if (!group) {
         setClientOptions([]);
         return;
@@ -154,6 +176,7 @@ export default function Medications() {
     frequencyLabel: string;
     daysOfWeek: string[];
     durationDays: number;
+    startDate: string;
     clientEmail?: string;
   }) => {
     const medicationPayload = {
@@ -164,7 +187,7 @@ export default function Medications() {
       times: payload.times,
       daysOfWeek: payload.daysOfWeek,
       durationDays: payload.durationDays,
-      startDate: new Date().toISOString().slice(0, 10),
+      startDate: payload.startDate,
       frequencyLabel: payload.frequencyLabel,
       color: "from-blue-100 to-blue-50",
       emoji: "💊",
@@ -208,19 +231,12 @@ export default function Medications() {
       <div className="app-main">
         {isLoading ? <Card className="app-page-card p-5 text-center text-sm text-muted-foreground">Cargando medicación...</Card> : null}
 
-        {!isLoading ? (
+        {!isLoading && !isCaregiverRole ? (
           <Card className="app-page-card p-3.5 border-0">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Seguimiento</p>
-                  <p className="text-sm font-semibold text-foreground">
-                    {isCaregiverRole ? "Gestiona y actualiza pautas" : "Marca solo las tomas pendientes"}
-                  </p>
-                </div>
-                <div className="status-chip status-chip--positive shrink-0">
-                  {isCaregiverRole ? "Gestión activa" : "Tratamiento activo"}
-                </div>
-              </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Seguimiento</p>
+              <p className="text-sm font-semibold text-foreground">Aqui saldran tus medicamentos pendientes</p>
+            </div>
           </Card>
         ) : null}
 
@@ -237,7 +253,7 @@ export default function Medications() {
         </Card>
 
         <div className="grid grid-cols-2 gap-2">
-          {(Object.keys(FILTER_LABELS) as MedicationFilter[]).map((filter) => (
+          {availableFilters.map((filter) => (
             <button
               key={filter}
               type="button"
@@ -253,6 +269,8 @@ export default function Medications() {
           const scheduledToday = getScheduledDoseCountForDate(med, new Date());
           const takenToday = todayTakenCountMap[normalizeMedicationKey(med.id)] ?? 0;
           const objectiveCompletedToday = scheduledToday > 0 && takenToday >= scheduledToday;
+          const nextPendingDoseDiff = getNextPendingDoseMinutesDiff(med.times, takenToday, new Date());
+          const hasLatePendingDose = scheduledToday > 0 && !objectiveCompletedToday && nextPendingDoseDiff !== null && nextPendingDoseDiff < 0;
           const statusLabel = objectiveCompletedToday
             ? "Objetivo de hoy completado"
             : scheduledToday > 0
@@ -278,13 +296,15 @@ export default function Medications() {
                   <span>Horario</span>
                 </div>
                 <p className="text-sm font-semibold text-foreground">{med.times.map(formatTimeTo12h).join(" y ")}</p>
-                <p className="text-xs text-muted-foreground">{med.frequencyLabel}</p>
+                {isCaregiverRole ? <p className="text-xs text-muted-foreground">{med.frequencyLabel}</p> : null}
                 <p className="text-xs text-muted-foreground pt-0.5">
-                  Días: {formatScheduleDays(med.daysOfWeek)} · Duración: {med.durationDays ? `${med.durationDays} días` : "sin definir"}
+                  Días: {formatScheduleDays(med.daysOfWeek)}{isCaregiverRole ? ` · Duración: ${med.durationDays ? `${med.durationDays} días` : "sin definir"}` : ""}
                 </p>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <span className="status-chip status-chip--muted">Stock: {med.stock}</span>
-                </div>
+                {isCaregiverRole ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <span className="status-chip status-chip--muted">Stock: {med.stock}</span>
+                  </div>
+                ) : null}
               </div>
 
               <p className="text-xs font-semibold text-primary">{statusLabel}</p>
@@ -307,7 +327,13 @@ export default function Medications() {
                     }
                   }}
                 >
-                  {pendingMedicationId === med.id ? "Guardando..." : objectiveCompletedToday ? "Objetivo completado" : "Marcar como tomado"}
+                  {pendingMedicationId === med.id
+                    ? "Guardando..."
+                    : objectiveCompletedToday
+                      ? "Objetivo completado"
+                      : hasLatePendingDose
+                        ? "Marcar como tomado tarde"
+                        : "Marcar como tomado"}
                 </button>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
@@ -345,13 +371,13 @@ export default function Medications() {
                 </div>
               )}
 
-              <p className="text-[11px] text-muted-foreground">Última toma: {formatLastTaken(med.lastTakenAt)}</p>
+              {isCaregiverRole ? <p className="text-[11px] text-muted-foreground">Última toma: {formatLastTaken(med.lastTakenAt)}</p> : null}
             </div>
           </Card>
           );
         })}
 
-        {actionError ? <Card className="app-page-card p-4 border border-red-200 bg-red-50 text-red-700 text-sm">{actionError}</Card> : null}
+        {actionError ? <Card className="app-page-card p-4 border border-destructive/35 bg-destructive/10 text-destructive text-sm">{actionError}</Card> : null}
 
         {visibleMedications.length === 0 ? (
           <Card className="app-page-card p-7 text-center text-sm text-muted-foreground">No hay medicación activa.</Card>
@@ -394,6 +420,7 @@ export default function Medications() {
                   times: current.times,
                   daysOfWeek: current.daysOfWeek,
                   durationDays: current.durationDays,
+                  startDate: current.startDate,
                 };
               })()
             : null

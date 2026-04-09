@@ -97,10 +97,32 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       displayName: buildDisplayName(user),
       isCaregiverRole: role === "familiar_cuidador",
       signOut: async () => {
+        // Try normal sign out first.
         const { error } = await supabase.auth.signOut();
         if (error) {
-          throw new Error(error.message);
+          // Fallback: clear local session to prevent stuck authenticated state on network/API errors.
+          const localResult = await supabase.auth.signOut({ scope: "local" });
+          if (localResult.error) {
+            throw new Error(localResult.error.message);
+          }
         }
+
+        // Hard cleanup for persisted auth keys.
+        try {
+          const keysToRemove: string[] = [];
+          for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+            if (key && key.startsWith("sb-") && key.includes("-auth-token")) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach((key) => localStorage.removeItem(key));
+        } catch {
+          // Ignore storage cleanup errors.
+        }
+
+        // Ensure local React state reflects signed-out user immediately.
+        setSession(null);
       },
     };
   }, [isLoading, session]);

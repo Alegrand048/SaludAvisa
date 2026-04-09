@@ -54,7 +54,11 @@ export default function Appointments() {
         return;
       }
 
-      const group = await familyGroupService.getForUser(user.id, user.email);
+      const group = await familyGroupService.getForUser(
+        user.id,
+        user.email,
+        isCaregiverRole ? "familiar_cuidador" : "usuario",
+      );
       if (!group) {
         setClientOptions([]);
         return;
@@ -158,7 +162,7 @@ export default function Appointments() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Agenda médica</p>
-              <p className="text-sm font-semibold text-foreground">Consulta rápido tus próximas citas</p>
+              <p className="text-sm font-semibold text-foreground">Consulta tus próximas citas</p>
             </div>
             <span className="status-chip status-chip--muted">{count} total</span>
           </div>
@@ -231,7 +235,7 @@ export default function Appointments() {
           <Card className="app-page-card p-7 text-center text-sm text-muted-foreground">No hay citas registradas.</Card>
         ) : null}
 
-        <Card className="app-page-card p-4 border-0 bg-gradient-to-br from-yellow-100 to-yellow-50">
+        <Card className="app-page-card p-4 border-0">
           <div className="flex items-center gap-4">
             <span className="text-2xl">💡</span>
             <div>

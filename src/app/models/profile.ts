@@ -19,6 +19,7 @@ export interface PerfilUsuario {
   age: number;
   email: string;
   avatarEmoji: string;
+  avatarUrl?: string;
   emergencyPhone: string;
   caregivers: Cuidador[];
   notifications: PreferenciasNotificacion;

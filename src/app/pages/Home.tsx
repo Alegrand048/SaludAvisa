@@ -68,8 +68,12 @@ export default function Home() {
         <div className="mx-auto max-w-2xl">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="size-14 rounded-[1.15rem] bg-primary/12 text-primary border border-primary/15 shadow-sm flex items-center justify-center">
-                <span className="text-2xl font-bold tracking-tight">{displayInitial}</span>
+              <div className="size-14 rounded-[1.15rem] bg-primary/12 text-primary border border-primary/15 shadow-sm flex items-center justify-center overflow-hidden">
+                {profile.avatarUrl ? (
+                  <img src={profile.avatarUrl} alt="Foto de perfil" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-2xl font-bold tracking-tight">{displayInitial}</span>
+                )}
               </div>
               <div className="space-y-1">
                 <span className="eyebrow-chip">SaludAvisa</span>
@@ -83,11 +87,15 @@ export default function Home() {
               </div>
             </div>
             <button
-              className="size-12 rounded-2xl border border-border/70 bg-card/90 text-foreground shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-secondary/80 flex items-center justify-center"
+              className="size-12 rounded-2xl border border-border/70 bg-card/90 text-foreground shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-secondary/80 flex items-center justify-center overflow-hidden"
               onClick={() => navigate("/profile")}
               aria-label="Ir a perfil"
             >
-              <Bell className="size-6" />
+              {profile.avatarUrl ? (
+                <img src={profile.avatarUrl} alt="Foto de perfil" className="h-full w-full object-cover" />
+              ) : (
+                <Bell className="size-6" />
+              )}
             </button>
           </div>
         </div>
@@ -132,7 +140,7 @@ export default function Home() {
                       : `En ${formatMinutesUntil(nextMedication.minutesUntil)}`}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {nextMedication.isLate ? "Conviene marcarla cuanto antes." : "Todo está dentro de la franja prevista."}
+                    {nextMedication.isLate ? "Se te esta haciendo tarde" : "Todo está dentro de la franja prevista."}
                   </p>
                 </div>
 
@@ -151,7 +159,7 @@ export default function Home() {
               <div className="grid place-items-center gap-2 rounded-[1.35rem] border border-dashed border-border/70 bg-background/50 py-10 text-center">
                 <Pill className="size-8 text-muted-foreground" />
                 <p className="text-lg font-semibold text-foreground">No hay medicación programada</p>
-                <p className="text-sm text-muted-foreground">Cuando añadas una pauta, aparecerá aquí el siguiente paso.</p>
+                <p className="text-sm text-muted-foreground">Cuando tengas medicamentos pendientes apareceran aqui</p>
               </div>
             ) : null}
           </Card>
@@ -167,7 +175,12 @@ export default function Home() {
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
-                    <span className="status-chip status-chip--muted">{formatAppointmentDate(nextAppointment.dateTime)}</span>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="status-chip status-chip--muted">{formatAppointmentDate(nextAppointment.dateTime)}</span>
+                      {nextAppointment.isDelayed ? (
+                        <span className="status-chip status-chip--warning">Retrasada {nextAppointment.delayedMinutes} min</span>
+                      ) : null}
+                    </div>
                     <h3 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[2.1rem]">{nextAppointment.specialty}</h3>
                     <p className="text-lg text-muted-foreground sm:text-xl">{nextAppointment.doctor}</p>
                   </div>
@@ -195,7 +208,7 @@ export default function Home() {
               <div className="grid place-items-center gap-2 rounded-[1.35rem] border border-dashed border-border/70 bg-background/50 py-10 text-center">
                 <Calendar className="size-8 text-muted-foreground" />
                 <p className="text-lg font-semibold text-foreground">No hay citas pendientes</p>
-                <p className="text-sm text-muted-foreground">Las citas compartidas aparecerán aquí como recordatorios.</p>
+                <p className="text-sm text-muted-foreground">Aqui te apareceran las citas pendientes</p>
               </div>
             )}
           </Card>
@@ -223,18 +236,18 @@ export default function Home() {
           </Button>
         </section>
 
-        {lowStockMedications.length > 0 ? (
-          <Card className="app-page-card border-0 bg-gradient-to-br from-amber-100/80 to-orange-50/90 p-5">
+        {isCaregiverRole && lowStockMedications.length > 0 ? (
+          <Card className="app-page-card border-0 p-5">
             <div className="flex items-start gap-3">
-              <div className="size-12 rounded-2xl bg-white/80 flex items-center justify-center shadow-sm shrink-0">
+              <div className="size-12 rounded-2xl bg-secondary/75 flex items-center justify-center shadow-sm shrink-0">
                 <span className="text-2xl">⚠</span>
               </div>
               <div className="space-y-1">
-                <p className="text-base font-semibold text-amber-950">Stock bajo detectado</p>
-                <p className="text-sm text-amber-900/90">
+                <p className="text-base font-semibold text-foreground">Stock bajo detectado</p>
+                <p className="text-sm text-muted-foreground">
                   {lowStockMedications.length} medicamento(s) están por debajo de 5 unidades.
                 </p>
-                <p className="text-sm text-amber-950/90">
+                <p className="text-sm text-foreground/90">
                   {lowStockMedications.slice(0, 3).map((item) => `${item.name} (${item.stock})`).join(" · ")}
                 </p>
               </div>
@@ -242,6 +255,7 @@ export default function Home() {
           </Card>
         ) : null}
 
+        {isCaregiverRole ? (
         <Card className="app-page-card border-0 bg-gradient-to-br from-slate-50 to-primary/5 p-5">
           <div className="flex items-start gap-3">
             <div className="size-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -255,6 +269,8 @@ export default function Home() {
             </div>
           </div>
         </Card>
+        ) : null}
+
       </div>
 
       <BottomNav />

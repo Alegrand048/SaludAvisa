@@ -23,6 +23,7 @@ interface AddMedicationDialogProps {
     times: string[];
     daysOfWeek?: string[];
     durationDays?: number;
+    startDate?: string;
   } | null;
   initialClientEmail?: string | null;
   onSubmit: (payload: {
@@ -34,6 +35,7 @@ interface AddMedicationDialogProps {
     frequencyLabel: string;
     daysOfWeek: string[];
     durationDays: number;
+    startDate: string;
     clientEmail?: string;
   }) => Promise<void>;
 }
@@ -49,6 +51,10 @@ const DAYS_OF_WEEK = [
 ];
 
 const DURATION_PRESETS = [2, 7, 30];
+
+function weekdayCode(date: Date): string {
+  return ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][date.getDay()] ?? "mon";
+}
 
 export function AddMedicationDialog({
   open,
@@ -70,6 +76,8 @@ export function AddMedicationDialog({
   const [times, setTimes] = useState<string[]>(["08:00"]);
   const [daysOfWeek, setDaysOfWeek] = useState<string[]>(DAYS_OF_WEEK.map((day) => day.value));
   const [durationDays, setDurationDays] = useState("30");
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [singleDayMode, setSingleDayMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sugerencias, setSugerencias] = useState<SugerenciaMedicamentoCima[]>([]);
   const [buscandoSugerencias, setBuscandoSugerencias] = useState(false);
@@ -86,6 +94,8 @@ export function AddMedicationDialog({
     setTimes(["08:00"]);
     setDaysOfWeek(DAYS_OF_WEEK.map((day) => day.value));
     setDurationDays("30");
+    setStartDate(new Date().toISOString().slice(0, 10));
+    setSingleDayMode(false);
     setSugerencias([]);
     setErrorSugerencias(null);
     setSubmitError(null);
@@ -138,6 +148,8 @@ export function AddMedicationDialog({
     setVecesAlDia(initialValues.times.length > 0 ? initialValues.times.length : 1);
     setDaysOfWeek(initialValues.daysOfWeek && initialValues.daysOfWeek.length > 0 ? initialValues.daysOfWeek : DAYS_OF_WEEK.map((day) => day.value));
     setDurationDays(String(initialValues.durationDays ?? 30));
+    setStartDate(initialValues.startDate ?? new Date().toISOString().slice(0, 10));
+    setSingleDayMode((initialValues.durationDays ?? 30) === 1);
     setSubmitError(null);
   }, [open, initialValues]);
 
@@ -221,8 +233,21 @@ export function AddMedicationDialog({
       setSaving(true);
       setSubmitError(null);
 
-      if (showClientAssignment && !clientEmail.trim()) {
+        const requiresClientSelection = showClientAssignment && clientOptions.length > 0;
+        const normalizedClientEmail = clientEmail.trim() || (requiresClientSelection ? (clientOptions[0]?.trim() ?? "") : "");
+
+        if (requiresClientSelection && !normalizedClientEmail) {
         setSubmitError("Selecciona un cliente del grupo familiar.");
+        return;
+      }
+
+      const effectiveDaysOfWeek = singleDayMode
+        ? [weekdayCode(new Date(`${startDate}T00:00:00`))]
+        : daysOfWeek;
+      const effectiveDurationDays = singleDayMode ? 1 : Number(durationDays) || 0;
+
+      if (effectiveDaysOfWeek.length === 0) {
+        setSubmitError("Selecciona al menos un día o usa la opción de un solo día.");
         return;
       }
 
@@ -233,9 +258,10 @@ export function AddMedicationDialog({
         boxType,
         times,
         frequencyLabel: frecuenciaLabel,
-        daysOfWeek,
-        durationDays: Number(durationDays) || 0,
-        clientEmail: clientEmail.trim() ? clientEmail.trim().toLowerCase() : undefined,
+        daysOfWeek: effectiveDaysOfWeek,
+        durationDays: effectiveDurationDays,
+        startDate,
+        clientEmail: normalizedClientEmail ? normalizedClientEmail.toLowerCase() : undefined,
       });
       reset();
       onClose();
@@ -354,6 +380,22 @@ export function AddMedicationDialog({
 
           <div className="space-y-2">
             <Label>Días de la semana</Label>
+            <div className="flex flex-wrap gap-2 pb-1">
+              <button
+                type="button"
+                onClick={() => setSingleDayMode(false)}
+                className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold transition-colors ${!singleDayMode ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-background text-foreground"}`}
+              >
+                Repetir según días
+              </button>
+              <button
+                type="button"
+                onClick={() => setSingleDayMode(true)}
+                className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold transition-colors ${singleDayMode ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-background text-foreground"}`}
+              >
+                Solo un día
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
               {DAYS_OF_WEEK.map((day) => {
                 const selected = daysOfWeek.includes(day.value);
@@ -362,15 +404,28 @@ export function AddMedicationDialog({
                     key={day.value}
                     type="button"
                     onClick={() => toggleDay(day.value)}
-                    className={`size-10 rounded-2xl border text-sm font-semibold transition-colors ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-background text-foreground"}`}
+                    className={`size-10 rounded-2xl border text-sm font-semibold transition-colors disabled:opacity-40 ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-background text-foreground"}`}
                     aria-pressed={selected}
+                    disabled={singleDayMode}
                   >
                     {day.label}
                   </button>
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground">Selecciona los dias en los que se tomara el medicamento.</p>
+            <p className="text-xs text-muted-foreground">{singleDayMode ? "En modo un solo día se usa la fecha de inicio exacta." : "Selecciona los días en los que se tomará el medicamento."}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="med-start-date">Fecha de inicio</Label>
+            <Input
+              id="med-start-date"
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              className="h-11 rounded-2xl border-border/70 bg-background"
+              required
+            />
           </div>
 
           <div className="space-y-2">
@@ -384,6 +439,7 @@ export function AddMedicationDialog({
               placeholder="Ej. 30"
               className="h-11 rounded-2xl border-border/70 bg-background"
               required
+              disabled={singleDayMode}
             />
             <div className="flex flex-wrap gap-2">
               {DURATION_PRESETS.map((preset) => (
@@ -391,7 +447,8 @@ export function AddMedicationDialog({
                   key={preset}
                   type="button"
                   onClick={() => setDurationDays(String(preset))}
-                  className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold transition-colors ${Number(durationDays) === preset ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-background text-foreground"}`}
+                  className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40 ${Number(durationDays) === preset ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-background text-foreground"}`}
+                  disabled={singleDayMode}
                 >
                   {preset} días
                 </button>
@@ -410,7 +467,7 @@ export function AddMedicationDialog({
             />
           </div>
 
-          {showClientAssignment ? (
+          {showClientAssignment && clientOptions.length > 0 ? (
             <div className="space-y-2">
               <Label htmlFor="med-client-email">Cliente destino</Label>
               <select
@@ -419,9 +476,7 @@ export function AddMedicationDialog({
                 onChange={(event) => setClientEmail(event.target.value)}
                 className="h-11 w-full rounded-2xl border border-border/70 bg-background px-3 text-sm"
                 required
-                disabled={clientOptions.length === 0}
               >
-                {clientOptions.length === 0 ? <option value="">No hay clientes disponibles</option> : null}
                 {clientOptions.map((email) => (
                   <option key={email} value={email}>
                     {email}
@@ -432,6 +487,12 @@ export function AddMedicationDialog({
                 Selecciona a qué cliente del grupo familiar asignarás este medicamento.
               </p>
             </div>
+          ) : null}
+
+          {showClientAssignment && clientOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No hay clientes vinculados ahora mismo. Este medicamento se guardará en tu cuenta.
+            </p>
           ) : null}
 
           {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}

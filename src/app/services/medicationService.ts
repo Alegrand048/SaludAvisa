@@ -56,6 +56,16 @@ interface AuthUserContext {
   role: string;
 }
 
+export interface MedicationTakenLog {
+  medicationId: string;
+  medicationName: string;
+  dosage: string;
+  takenAt: string;
+  completed: boolean;
+  stockRemaining: number;
+  recordedByEmail?: string | null;
+}
+
 const seedMedications: Medication[] = [];
 
 function isLegacyDemoMedication(medication: Medication): boolean {
@@ -280,6 +290,7 @@ function isMedicationAllowedOnDate(medication: { daysOfWeek?: string[]; duration
     const start = new Date(`${medication.startDate}T00:00:00`);
     const end = new Date(start);
     end.setDate(end.getDate() + medication.durationDays - 1);
+    end.setHours(23, 59, 59, 999);
     if (date < start || date > end) {
       return false;
     }
@@ -784,5 +795,51 @@ export const medicationService = {
       acc[row.medicamento_id] = (acc[row.medicamento_id] ?? 0) + 1;
       return acc;
     }, {});
+  },
+
+  async getTakenLogsForMonthAsync(year: number, monthIndex: number): Promise<MedicationTakenLog[]> {
+    const user = await getCurrentUserContext();
+    if (!user) {
+      return [];
+    }
+
+    const start = new Date(year, monthIndex, 1);
+    const end = new Date(year, monthIndex + 1, 1);
+    const isClientRole = user.role === "usuario";
+
+    const baseQuery = supabase
+      .from(TAKEN_LOG_TABLE)
+      .select("medicamento_id, nombre_medicamento, dosis, tomado_en, stock_restante, completado, registrado_por_email")
+      .gte("tomado_en", start.toISOString())
+      .lt("tomado_en", end.toISOString())
+      .order("tomado_en", { ascending: true });
+
+    const query = isClientRole
+      ? baseQuery.eq("cliente_email", user.email)
+      : baseQuery.eq("creador_usuario_id", user.id);
+
+    const { data, error } = await query;
+
+    if (error || !data) {
+      return [];
+    }
+
+    return (data as Array<{
+      medicamento_id: string;
+      nombre_medicamento: string;
+      dosis: string;
+      tomado_en: string;
+      stock_restante: number;
+      completado: boolean;
+      registrado_por_email?: string | null;
+    }>).map((row) => ({
+      medicationId: row.medicamento_id,
+      medicationName: row.nombre_medicamento,
+      dosage: row.dosis,
+      takenAt: row.tomado_en,
+      stockRemaining: row.stock_restante,
+      completed: row.completado,
+      recordedByEmail: row.registrado_por_email ?? null,
+    }));
   },
 };

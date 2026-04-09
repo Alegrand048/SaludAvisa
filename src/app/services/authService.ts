@@ -18,7 +18,7 @@ export const servicioAutenticacion = {
     }
   },
 
-  async registrarUsuario(name: string, email: string, password: string, role: UserRole) {
+  async registrarUsuario(name: string, email: string, password: string, role: UserRole, avatarUrl?: string) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -26,6 +26,7 @@ export const servicioAutenticacion = {
         data: {
           name,
           role,
+          avatar_url: avatarUrl ?? null,
         },
       },
     });
@@ -43,6 +44,39 @@ export const servicioAutenticacion = {
         );
       }
     }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user?.id) {
+      const payloadConAvatar = {
+        usuario_id: user.id,
+        nombre_completo: name.trim(),
+        email: email.trim().toLowerCase(),
+        avatar_url: avatarUrl ?? null,
+      };
+
+      const { error: profileError } = await supabase.from("perfiles").upsert(payloadConAvatar, { onConflict: "usuario_id" });
+      if (profileError && (profileError.message.toLowerCase().includes("avatar_url") || profileError.message.toLowerCase().includes("column"))) {
+        const { error: legacyProfileError } = await supabase
+          .from("perfiles")
+          .upsert(
+            {
+              usuario_id: user.id,
+              nombre_completo: name.trim(),
+              email: email.trim().toLowerCase(),
+              avatar_emoji: avatarUrl ?? "",
+            },
+            { onConflict: "usuario_id" },
+          );
+        if (legacyProfileError) {
+          throw new Error(normalizeSupabaseErrorMessage(legacyProfileError.message));
+        }
+      } else if (profileError) {
+        throw new Error(normalizeSupabaseErrorMessage(profileError.message));
+      }
+    }
   },
 
   async restablecerContrasena(email: string) {
@@ -54,7 +88,7 @@ export const servicioAutenticacion = {
     }
   },
 
-  async eliminarCuentaActual(password: string) {
+  async validarContrasena(password: string) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -70,6 +104,48 @@ export const servicioAutenticacion = {
     if (reauthError) {
       throw new Error("Contrasena incorrecta.");
     }
+  },
+
+  async actualizarNombreSeguro(password: string, name: string) {
+    await this.validarContrasena(password);
+    const cleanedName = name.trim();
+    if (!cleanedName) {
+      throw new Error("El nombre no puede estar vacío.");
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        name: cleanedName,
+      },
+    });
+
+    if (error) {
+      throw new Error(normalizeSupabaseErrorMessage(error.message));
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user?.id) {
+      const { error: profileError } = await supabase
+        .from("perfiles")
+        .upsert(
+          {
+            usuario_id: user.id,
+            nombre_completo: cleanedName,
+            email: user.email?.toLowerCase() ?? null,
+          },
+          { onConflict: "usuario_id" },
+        );
+      if (profileError) {
+        throw new Error(normalizeSupabaseErrorMessage(profileError.message));
+      }
+    }
+  },
+
+  async eliminarCuentaActual(password: string) {
+    await this.validarContrasena(password);
 
     const { error: deleteError } = await supabase.rpc("eliminar_mi_cuenta");
     if (!deleteError) {
@@ -104,5 +180,7 @@ export const authService = {
   signIn: servicioAutenticacion.iniciarSesion,
   signUp: servicioAutenticacion.registrarUsuario,
   resetPassword: servicioAutenticacion.restablecerContrasena,
+  verifyPassword: servicioAutenticacion.validarContrasena,
+  updateDisplayNameSecure: servicioAutenticacion.actualizarNombreSeguro,
   deleteAccount: servicioAutenticacion.eliminarCuentaActual,
 };

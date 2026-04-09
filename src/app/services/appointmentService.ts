@@ -4,6 +4,7 @@ import { supabase } from "./supabaseClient";
 
 const CLAVE_ALMACENAMIENTO = "saludavisa.appointments";
 const SHARED_TABLE = "citas_familia_compartidas";
+const APPOINTMENT_VISIBLE_AFTER_MINUTES = 24 * 60;
 const LEGACY_DEMO_APPOINTMENT_IDS = new Set(["1", "2", "3"]);
 const LEGACY_DEMO_APPOINTMENT_SPECIALTIES = new Set([
   "cardiologia",
@@ -60,6 +61,13 @@ function obtenerCitasLocales(): Appointment[] {
 
 function dedupeAppointments(items: Appointment[]): Appointment[] {
   return Array.from(new Map(items.map((item) => [item.id, item])).values());
+}
+
+function filterAppointmentsWithinVisibilityWindow(items: Appointment[], now: Date = new Date()): Appointment[] {
+  const minDate = new Date(now.getTime() - APPOINTMENT_VISIBLE_AFTER_MINUTES * 60000);
+  return items
+    .filter((appointment) => new Date(appointment.dateTime) >= minDate)
+    .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 }
 
 function rowToAppointment(row: SharedAppointmentRow): Appointment {
@@ -146,16 +154,16 @@ async function getAllFromRemoteOrLocal(): Promise<Appointment[]> {
     guardarCitas(localRows);
   }
 
-  return combined;
+  return filterAppointmentsWithinVisibilityWindow(combined);
 }
 
 export const servicioCitas = {
   obtenerTodas(): Appointment[] {
-    return obtenerCitasLocales();
+    return filterAppointmentsWithinVisibilityWindow(obtenerCitasLocales());
   },
 
   obtenerProxima(ahora: Date = new Date()): Appointment | null {
-    return obtenerCitasLocales().find((cita) => new Date(cita.dateTime) >= ahora) ?? null;
+    return filterAppointmentsWithinVisibilityWindow(obtenerCitasLocales(), ahora).find((cita) => new Date(cita.dateTime) >= ahora) ?? null;
   },
 
   agregar(cita: Appointment): Appointment[] {

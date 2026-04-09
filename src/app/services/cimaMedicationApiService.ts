@@ -63,7 +63,7 @@ function calcularRelevancia(item: SugerenciaMedicamentoCima, consultaNormalizada
   }
   
   // Contiene la consulta: relevancia media
-  if (nombreNormalizado.includes(consultaNormalizado)) {
+  if (nombreNormalizado.includes(consultaNormalizada)) {
     return 1;
   }
   

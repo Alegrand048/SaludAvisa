@@ -23,6 +23,7 @@ function isMedicationAllowedOnDate(medication: { daysOfWeek?: string[]; duration
     const start = new Date(`${medication.startDate}T00:00:00`);
     const end = new Date(start);
     end.setDate(end.getDate() + medication.durationDays - 1);
+    end.setHours(23, 59, 59, 999);
     if (date < start || date > end) {
       return false;
     }
@@ -50,12 +51,26 @@ function getSlotDate(baseDate: Date, time: string): Date {
   return date;
 }
 
+const APPOINTMENT_DELAY_WINDOW_MINUTES = 30;
+const MEDICATION_STALE_DELAY_MINUTES = 30;
+
 export function useControladorPanel() {
   const [version, setVersion] = useState(0);
+  const [timeTick, setTimeTick] = useState(Date.now());
   const [medications, setMedications] = useState<Medication[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [todayTakenCountMap, setTodayTakenCountMap] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setTimeTick(Date.now());
+    }, 15000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const refresh = async () => {
@@ -121,6 +136,11 @@ export function useControladorPanel() {
               return [];
             }
 
+            const diffMinutes = Math.round((date.getTime() - now.getTime()) / 60000);
+            if (diffMinutes < -MEDICATION_STALE_DELAY_MINUTES) {
+              return [];
+            }
+
             if (!isToday && date < now) {
               return [];
             }
@@ -153,16 +173,32 @@ export function useControladorPanel() {
       lateMinutes: Math.abs(Math.min(0, diffMinutes)),
       timeLabel: formatearHora24a12(next.time),
     };
-  }, [medications, todayTakenCountMap]);
+  }, [medications, todayTakenCountMap, timeTick]);
 
   const nextAppointment = useMemo(() => {
     const now = new Date();
-    return (
+    const candidate = (
       appointments
-        .filter((appointment) => new Date(appointment.dateTime) >= now)
+        .map((appointment) => {
+          const date = new Date(appointment.dateTime);
+          const diffMinutes = Math.round((date.getTime() - now.getTime()) / 60000);
+          return {
+            ...appointment,
+            isDelayed: diffMinutes < 0,
+            delayedMinutes: Math.abs(Math.min(0, diffMinutes)),
+            diffMinutes,
+          };
+        })
+        .filter((appointment) => appointment.diffMinutes >= -APPOINTMENT_DELAY_WINDOW_MINUTES)
         .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime())[0] ?? null
     );
-  }, [appointments]);
+
+    if (candidate && candidate.delayedMinutes > APPOINTMENT_DELAY_WINDOW_MINUTES) {
+      return null;
+    }
+
+    return candidate;
+  }, [appointments, timeTick]);
 
   const refrescar = () => setVersion((current) => current + 1);
 
@@ -173,7 +209,7 @@ export function useControladorPanel() {
           timeLabel: formatearHora24a12(nextMedication.time),
         }
       : null,
-    nextAppointment: nextAppointment as Appointment | null,
+    nextAppointment: nextAppointment as (Appointment & { isDelayed: boolean; delayedMinutes: number }) | null,
     refresh: refrescar,
     isLoading,
   };

@@ -27,11 +27,11 @@ export function useControladorAutenticacion() {
     }
   };
 
-  const signUp = async (name: string, email: string, password: string, role: UserRole) => {
+  const signUp = async (name: string, email: string, password: string, role: UserRole, avatarUrl?: string) => {
     try {
       setIsLoading(true);
       limpiarMensajes();
-      await authService.signUp(name, email, password, role);
+      await authService.signUp(name, email, password, role, avatarUrl);
       setMessage("Cuenta creada. Ya puedes usar la app.");
       return true;
     } catch (authError) {
@@ -52,6 +52,37 @@ export function useControladorAutenticacion() {
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "No se pudo enviar el correo.");
       return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verifyPassword = async (password: string): Promise<{ ok: boolean; errorMessage?: string }> => {
+    try {
+      setIsLoading(true);
+      limpiarMensajes();
+      await authService.verifyPassword(password);
+      return { ok: true };
+    } catch (authError) {
+      const errorMessage = authError instanceof Error ? authError.message : "Contrasena inválida.";
+      setError(errorMessage);
+      return { ok: false, errorMessage };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateDisplayName = async (password: string, name: string): Promise<{ ok: boolean; errorMessage?: string }> => {
+    try {
+      setIsLoading(true);
+      limpiarMensajes();
+      await authService.updateDisplayNameSecure(password, name);
+      setMessage("Nombre actualizado correctamente.");
+      return { ok: true };
+    } catch (authError) {
+      const errorMessage = authError instanceof Error ? authError.message : "No se pudo actualizar el nombre.";
+      setError(errorMessage);
+      return { ok: false, errorMessage };
     } finally {
       setIsLoading(false);
     }
@@ -81,6 +112,8 @@ export function useControladorAutenticacion() {
     signIn,
     signUp,
     resetPassword,
+    verifyPassword,
+    updateDisplayName,
     deleteAccount,
   };
 }

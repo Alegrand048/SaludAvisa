@@ -4,6 +4,8 @@ const GROUP_TABLE = "grupos_familiares";
 const MEMBER_TABLE = "miembros_familia";
 const INVITATION_TABLE = "invitaciones_familia";
 const JOIN_REQUEST_TABLE = "solicitudes_union_familiar";
+const SHARED_MEDICATIONS_TABLE = "medicamentos_familia_compartidos";
+const SHARED_APPOINTMENTS_TABLE = "citas_familia_compartidas";
 
 export type RolFamiliar = "cliente" | "familiar_cuidador";
 
@@ -65,6 +67,13 @@ interface ProfileNameRow {
   nombre_completo: string | null;
 }
 
+export interface MemberProfileSummary {
+  name?: string;
+  avatarUrl?: string;
+}
+
+type AppUserRole = "usuario" | "familiar_cuidador";
+
 interface FamilyMember {
   email: string;
   role: RolFamiliar;
@@ -77,6 +86,24 @@ function normalizeEmail(email: string): string {
 
 function normalizeMemberRole(role: RolFamiliarLegacy): RolFamiliar {
   return role === "cuidador_familiar" ? "familiar_cuidador" : role;
+}
+
+function isAvatarUrlCandidate(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const trimmed = value.trim();
+  return trimmed.startsWith("data:image") || trimmed.startsWith("http://") || trimmed.startsWith("https://");
+}
+
+function resolveAvatarFromProfileRow(row: ProfileNameRow): string | undefined {
+  if (isAvatarUrlCandidate(row.avatar_url)) {
+    return row.avatar_url!.trim();
+  }
+  if (isAvatarUrlCandidate(row.avatar_emoji)) {
+    return row.avatar_emoji!.trim();
+  }
+  return undefined;
 }
 
 function mapGroup(row: FamilyGroupRow, members: FamilyMemberRow[]): FamilyGroup {
@@ -124,7 +151,7 @@ async function getFallbackGroupFromAcceptedRequests(userId: string, userEmail: s
     .from(JOIN_REQUEST_TABLE)
     .select("id, solicitante_usuario_id, solicitante_email, solicitante_nombre, cliente_email, estado, creado_en")
     .eq("estado", "aceptada")
-    .or(`cliente_email.eq.${normalizedEmail},solicitante_usuario_id.eq.${userId}`)
+    .or(`cliente_email.eq.${normalizedEmail},solicitante_usuario_id.eq.${userId},solicitante_email.eq.${normalizedEmail}`)
     .order("creado_en", { ascending: false });
 
   if (error || !data || data.length === 0) {
@@ -135,6 +162,14 @@ async function getFallbackGroupFromAcceptedRequests(userId: string, userEmail: s
   const latest = rows[0];
 
   const ownerEmail = normalizeEmail(latest.cliente_email);
+
+  // Accepted requests are historical records and can stay as "aceptada"
+  // after a caregiver unlinks. To avoid stale family resurrection on caregiver
+  // accounts, only allow this fallback for the client/owner side.
+  if (normalizedEmail !== ownerEmail) {
+    return null;
+  }
+
   const relatedRows = rows.filter((row) => normalizeEmail(row.cliente_email) === ownerEmail);
 
   const members: MiembroFamiliar[] = [
@@ -158,6 +193,65 @@ async function getFallbackGroupFromAcceptedRequests(userId: string, userEmail: s
     ownerEmail,
     createdAt: latest.creado_en,
     members: deduped,
+  };
+}
+
+async function getFallbackGroupFromSharedResources(userId: string, userEmail: string): Promise<FamilyGroup | null> {
+  const normalizedEmail = normalizeEmail(userEmail);
+
+  const [sharedMedicationsResult, sharedAppointmentsResult] = await Promise.all([
+    supabase
+      .from(SHARED_MEDICATIONS_TABLE)
+      .select("cliente_email")
+      .eq("creador_usuario_id", userId)
+      .eq("activa", true),
+    supabase
+      .from(SHARED_APPOINTMENTS_TABLE)
+      .select("cliente_email")
+      .eq("creador_usuario_id", userId)
+      .eq("activa", true),
+  ]);
+
+  const sharedClientEmails = new Set<string>();
+  if (!sharedMedicationsResult.error && sharedMedicationsResult.data) {
+    (sharedMedicationsResult.data as Array<{ cliente_email: string }>).forEach((row) => {
+      if (row.cliente_email) {
+        sharedClientEmails.add(normalizeEmail(row.cliente_email));
+      }
+    });
+  }
+  if (!sharedAppointmentsResult.error && sharedAppointmentsResult.data) {
+    (sharedAppointmentsResult.data as Array<{ cliente_email: string }>).forEach((row) => {
+      if (row.cliente_email) {
+        sharedClientEmails.add(normalizeEmail(row.cliente_email));
+      }
+    });
+  }
+
+  const ownerEmail = Array.from(sharedClientEmails)[0];
+  if (!ownerEmail) {
+    return null;
+  }
+
+  const members: MiembroFamiliar[] = [
+    {
+      email: ownerEmail,
+      role: "cliente",
+      status: "activo",
+    },
+    {
+      email: normalizedEmail,
+      role: "familiar_cuidador",
+      status: "activo",
+    },
+  ];
+
+  return {
+    id: `fallback-shared-${userId}`,
+    ownerId: ownerEmail === normalizedEmail ? userId : userId,
+    ownerEmail,
+    createdAt: new Date().toISOString(),
+    members,
   };
 }
 
@@ -225,7 +319,7 @@ export const familyGroupService = {
     return loadGroupById(data.grupo_id);
   },
 
-  async getForUser(userId: string, userEmail: string): Promise<FamilyGroup | null> {
+  async getForUser(userId: string, userEmail: string, userRole?: AppUserRole): Promise<FamilyGroup | null> {
     const ownerGroup = await this.getByOwner(userId);
     if (ownerGroup) {
       return ownerGroup;
@@ -236,7 +330,19 @@ export const familyGroupService = {
       return memberGroup;
     }
 
-    return getFallbackGroupFromAcceptedRequests(userId, userEmail);
+    // Caregiver view must be driven by active links only. Historical accepted
+    // requests or shared resources can remain after unlink and should not
+    // recreate the family in UI.
+    if (userRole === "familiar_cuidador") {
+      return null;
+    }
+
+    const acceptedRequestFallback = await getFallbackGroupFromAcceptedRequests(userId, userEmail);
+    if (acceptedRequestFallback) {
+      return acceptedRequestFallback;
+    }
+
+    return getFallbackGroupFromSharedResources(userId, userEmail);
   },
 
   async acceptPendingInvitations(userId: string, email: string): Promise<void> {
@@ -327,6 +433,46 @@ export const familyGroupService = {
     const { data: requestRows, error: requestError } = await supabase
       .from(JOIN_REQUEST_TABLE)
       .select("solicitante_email, solicitante_nombre, cliente_email, estado")
+      .in("estado", ["pendiente", "aceptada"]);
+
+    if (!requestError && requestRows) {
+      (requestRows as Array<Pick<JoinRequestRow, "solicitante_email" | "solicitante_nombre" | "cliente_email" | "estado">>).forEach((row) => {
+        const requesterEmail = normalizeEmail(row.solicitante_email);
+        const clientEmail = normalizeEmail(row.cliente_email);
+        
+        // If caregiver (requester) is in unique emails and has a name, map it.
+        if (uniqueEmails.includes(requesterEmail) && row.solicitante_nombre?.trim()) {
+          namesByEmail[requesterEmail] = row.solicitante_nombre.trim();
+        }
+        
+        // If client email is in unique emails and we're a caregiver viewing them, fallback using solicitante_nombre convention
+        // This gives us the caregiver's stored name which is likely more accurate than email.
+        const normalizedUserEmail = normalizeEmail(userEmail);
+        if (uniqueEmails.includes(clientEmail) && normalizedUserEmail === requesterEmail && row.solicitante_nombre?.trim()) {
+          // If the user is the requester, we can infer the client is the other party
+          // Try to use the profile first, which was queried above
+          if (!namesByEmail[clientEmail]) {
+            // Fallback to showing the user's profile name for the client if no direct profile data
+            // This is handled later in resolveMemberDisplayName
+          }
+        }
+      });
+    }
+
+    return namesByEmail;
+  },
+
+  async getMemberProfiles(memberEmails: string[], userEmail: string): Promise<Record<string, MemberProfileSummary>> {
+    const uniqueEmails = Array.from(new Set(memberEmails.map(normalizeEmail).filter(Boolean)));
+    if (uniqueEmails.length === 0) {
+      return {};
+    }
+
+    const byEmail: Record<string, MemberProfileSummary> = {};
+
+    const { data: requestRows, error: requestError } = await supabase
+      .from(JOIN_REQUEST_TABLE)
+      .select("solicitante_email, solicitante_nombre, cliente_email, estado")
       .in("estado", ["pendiente", "aceptada"])
       .or(`cliente_email.eq.${normalizeEmail(userEmail)},solicitante_email.eq.${normalizeEmail(userEmail)}`);
 
@@ -334,12 +480,42 @@ export const familyGroupService = {
       (requestRows as Array<Pick<JoinRequestRow, "solicitante_email" | "solicitante_nombre" | "cliente_email" | "estado">>).forEach((row) => {
         const requesterEmail = normalizeEmail(row.solicitante_email);
         if (uniqueEmails.includes(requesterEmail) && row.solicitante_nombre?.trim()) {
-          namesByEmail[requesterEmail] = row.solicitante_nombre.trim();
+          byEmail[requesterEmail] = {
+            ...(byEmail[requesterEmail] ?? {}),
+            name: byEmail[requesterEmail]?.name || row.solicitante_nombre.trim(),
+          };
         }
       });
     }
 
-    return namesByEmail;
+     const { data: rpcRows, error: rpcError } = await supabase.rpc("api_obtener_perfiles_grupo_familiar", {
+       p_emails: uniqueEmails,
+     });
+
+    if (!rpcError && Array.isArray(rpcRows)) {
+      (rpcRows as Array<{ email: string; nombre_completo: string | null; avatar_url: string | null }>).forEach((row) => {
+        const email = normalizeEmail(row.email);
+        byEmail[email] = {
+          name: row.nombre_completo?.trim() || byEmail[email]?.name,
+          avatarUrl: row.avatar_url?.trim() || byEmail[email]?.avatarUrl,
+        };
+      });
+    }
+
+    return byEmail;
+  },
+
+  async getProfileName(email: string): Promise<string | null> {
+     const { data, error } = await supabase.rpc("api_obtener_perfiles_grupo_familiar", {
+       p_emails: [email],
+     });
+
+    if (error || !Array.isArray(data) || data.length === 0) {
+      return null;
+    }
+
+    const row = data[0] as { nombre_completo?: string | null };
+    return row.nombre_completo?.trim() || null;
   },
 
   async acceptJoinRequest(clientUserId: string, clientEmail: string, requestId: string): Promise<void> {

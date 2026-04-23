@@ -5,6 +5,14 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { hospitalSearchService } from "../services/hospitalSearchService";
 
+function getTodayLocalDateIso(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 interface AddAppointmentDialogProps {
   open: boolean;
   onClose: () => void;
@@ -30,7 +38,7 @@ export function AddAppointmentDialog({
   const [specialty, setSpecialty] = useState("Medicina general");
   const [location, setLocation] = useState("Centro médico");
   const [doctor, setDoctor] = useState("Dr./Dra.");
-  const [date, setDate] = useState("2026-04-20");
+  const [date, setDate] = useState(() => getTodayLocalDateIso());
   const [time, setTime] = useState("10:30");
   const [clientEmail, setClientEmail] = useState("");
   const [saving, setSaving] = useState(false);
@@ -42,6 +50,8 @@ export function AddAppointmentDialog({
       return;
     }
 
+    setDate(getTodayLocalDateIso());
+
     if (showClientAssignment && clientOptions.length > 0) {
       setClientEmail((current) => current || clientOptions[0]);
     }
@@ -51,7 +61,7 @@ export function AddAppointmentDialog({
     setSpecialty("Medicina general");
     setLocation("Centro médico");
     setDoctor("Dr./Dra.");
-    setDate("2026-04-20");
+    setDate(getTodayLocalDateIso());
     setTime("10:30");
     setClientEmail("");
     setSubmitError(null);

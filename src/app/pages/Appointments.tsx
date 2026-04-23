@@ -20,11 +20,10 @@ function formatAppointmentDate(dateTime: string): string {
 }
 
 function formatAppointmentTime(dateTime: string): string {
-  return new Date(dateTime).toLocaleTimeString("es-ES", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const date = new Date(dateTime);
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
 }
 
 function toLocalIsoDateTime(date: string, time: string): string {
@@ -250,7 +249,7 @@ export default function Appointments() {
 
       {isCaregiverRole ? (
         <button
-          className="fixed bottom-24 right-4 size-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl shadow-lg flex items-center justify-center z-20"
+          className="app-fab size-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl flex items-center justify-center"
           onClick={() => {
             setIsAddDialogOpen(true);
           }}

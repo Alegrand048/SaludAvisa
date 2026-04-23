@@ -233,8 +233,8 @@ export function AddMedicationDialog({
       setSaving(true);
       setSubmitError(null);
 
-        const requiresClientSelection = showClientAssignment && clientOptions.length > 0;
-        const normalizedClientEmail = clientEmail.trim() || (requiresClientSelection ? (clientOptions[0]?.trim() ?? "") : "");
+      const requiresClientSelection = showClientAssignment;
+      const normalizedClientEmail = clientEmail.trim() || (showClientAssignment ? (clientOptions[0]?.trim() ?? "") : "");
 
         if (requiresClientSelection && !normalizedClientEmail) {
         setSubmitError("Selecciona un cliente del grupo familiar.");
@@ -450,7 +450,7 @@ export function AddMedicationDialog({
                   className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40 ${Number(durationDays) === preset ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-background text-foreground"}`}
                   disabled={singleDayMode}
                 >
-                  {preset} días
+                  {`${preset} días`}
                 </button>
               ))}
             </div>
@@ -489,11 +489,11 @@ export function AddMedicationDialog({
             </div>
           ) : null}
 
-          {showClientAssignment && clientOptions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No hay clientes vinculados ahora mismo. Este medicamento se guardará en tu cuenta.
-            </p>
-          ) : null}
+              {showClientAssignment && clientOptions.length === 0 ? (
+                  <p className="text-xs text-destructive">
+                  No hay clientes vinculados ahora mismo. No se puede guardar hasta que haya un cliente en tu grupo familiar.
+                </p>
+              ) : null}
 
           {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
 

@@ -1,6 +1,7 @@
 import { Medication } from "../models/medication";
 import { readFromStorage, writeToStorage } from "./storage";
 import { supabase } from "./supabaseClient";
+import { familyGroupService } from "./familyGroupService";
 
 const STORAGE_KEY = "saludavisa.medications";
 const TABLE_NAME_ES = "medicamentos_usuario";
@@ -410,7 +411,7 @@ async function getSharedForClient(clientEmail: string): Promise<Medication[] | n
   const { data, error } = await supabase
     .from(SHARED_TABLE)
     .select("*")
-    .eq("cliente_email", clientEmail.toLowerCase())
+    .ilike("cliente_email", clientEmail.toLowerCase())
     .eq("activa", true)
     .order("creado_en", { ascending: true });
 
@@ -514,7 +515,7 @@ export const medicationService = {
         .from(SHARED_TABLE)
         .select("*")
         .eq("id", sharedId)
-        .eq("cliente_email", user.email)
+        .ilike("cliente_email", user.email)
         .maybeSingle();
 
       const sharedRow = sharedMedication as {
@@ -556,7 +557,7 @@ export const medicationService = {
         .from(SHARED_TABLE)
         .update({ ultima_toma_en: nowIso, stock: nextStock })
         .eq("id", sharedId)
-        .eq("cliente_email", user.email);
+        .ilike("cliente_email", user.email);
 
       if (!sharedError) {
         return this.getAllAsync();
@@ -636,13 +637,26 @@ export const medicationService = {
       return this.add({ ...medication, id: medicationId });
     }
 
+    let resolvedTargetClientEmail = targetClientEmail?.trim() ?? "";
+    const isCaregiverRole = user.role === "familiar_cuidador";
+
+    if (isCaregiverRole && !resolvedTargetClientEmail) {
+      const familyGroup = await familyGroupService.getForUser(user.id, user.email, "familiar_cuidador");
+      const linkedClientEmail = familyGroup?.members.find((member) => member.role === "cliente")?.email?.trim() ?? "";
+      resolvedTargetClientEmail = linkedClientEmail;
+    }
+
+    if (isCaregiverRole && !resolvedTargetClientEmail) {
+      throw new Error("No hay cliente vinculado para asignar esta medicacion.");
+    }
+
     const ownResult = await insertOwnMedicationWithFallback(user.id, medicationId, medication);
     const insertedOwnMedication = ownResult.ok;
     let insertedSharedMedication = false;
     let sharedInsertError: string | null = null;
 
-    if (targetClientEmail?.trim()) {
-      const sharedResult = await insertSharedMedicationWithFallback(user.id, medicationId, targetClientEmail, medication);
+    if (resolvedTargetClientEmail) {
+      const sharedResult = await insertSharedMedicationWithFallback(user.id, medicationId, resolvedTargetClientEmail, medication);
       insertedSharedMedication = sharedResult.ok;
       sharedInsertError = sharedResult.errorMessage ?? null;
 

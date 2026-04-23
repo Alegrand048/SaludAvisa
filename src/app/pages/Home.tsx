@@ -18,11 +18,10 @@ function formatAppointmentDate(dateTime: string): string {
 }
 
 function formatAppointmentTime(dateTime: string): string {
-  return new Date(dateTime).toLocaleTimeString("es-ES", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const date = new Date(dateTime);
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
 }
 
 function formatMinutesUntil(minutes: number): string {
@@ -87,15 +86,11 @@ export default function Home() {
               </div>
             </div>
             <button
-              className="size-12 rounded-2xl border border-border/70 bg-card/90 text-foreground shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-secondary/80 flex items-center justify-center overflow-hidden"
+              className="size-12 rounded-2xl border border-border/70 bg-card/95 text-foreground shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-secondary/80 flex items-center justify-center"
               onClick={() => navigate("/profile")}
               aria-label="Ir a perfil"
             >
-              {profile.avatarUrl ? (
-                <img src={profile.avatarUrl} alt="Foto de perfil" className="h-full w-full object-cover" />
-              ) : (
-                <Bell className="size-6" />
-              )}
+              <Bell className="size-6" />
             </button>
           </div>
         </div>

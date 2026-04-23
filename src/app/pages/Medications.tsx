@@ -386,7 +386,7 @@ export default function Medications() {
 
       {isCaregiverRole ? (
         <button
-          className="fixed bottom-24 right-4 size-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl shadow-lg flex items-center justify-center z-20"
+          className="app-fab size-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl flex items-center justify-center"
           onClick={() => setIsAddOpen(true)}
           aria-label="Añadir medicamento"
         >

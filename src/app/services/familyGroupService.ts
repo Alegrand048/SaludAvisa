@@ -284,6 +284,36 @@ async function loadGroupById(groupId: string): Promise<FamilyGroup | null> {
   return mapGroup(data as FamilyGroupRow, members);
 }
 
+async function getByMemberUserId(userId: string): Promise<FamilyGroup | null> {
+  const { data: activeData, error: activeError } = await supabase
+    .from(MEMBER_TABLE)
+    .select("grupo_id")
+    .eq("usuario_id", userId)
+    .eq("estado", "activo")
+    .order("creado_en", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!activeError && activeData?.grupo_id) {
+    return loadGroupById(activeData.grupo_id);
+  }
+
+  const { data: invitedData, error: invitedError } = await supabase
+    .from(MEMBER_TABLE)
+    .select("grupo_id")
+    .eq("usuario_id", userId)
+    .eq("estado", "invitado")
+    .order("creado_en", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (invitedError || !invitedData?.grupo_id) {
+    return null;
+  }
+
+  return loadGroupById(invitedData.grupo_id);
+}
+
 export const familyGroupService = {
   async getByOwner(ownerId: string): Promise<FamilyGroup | null> {
     const { data, error } = await supabase
@@ -303,20 +333,35 @@ export const familyGroupService = {
   async getByMemberEmail(email: string): Promise<FamilyGroup | null> {
     const normalized = normalizeEmail(email);
 
-    const { data, error } = await supabase
+    // First try active memberships. This prevents selecting an old invited row
+    // and is resilient to historic rows with inconsistent email casing.
+    const { data: activeData, error: activeError } = await supabase
       .from(MEMBER_TABLE)
       .select("grupo_id")
-      .eq("email", normalized)
-      .in("estado", ["invitado", "activo"])
+      .ilike("email", normalized)
+      .eq("estado", "activo")
       .order("creado_en", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (error || !data?.grupo_id) {
+    if (!activeError && activeData?.grupo_id) {
+      return loadGroupById(activeData.grupo_id);
+    }
+
+    const { data: invitedData, error: invitedError } = await supabase
+      .from(MEMBER_TABLE)
+      .select("grupo_id")
+      .ilike("email", normalized)
+      .eq("estado", "invitado")
+      .order("creado_en", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (invitedError || !invitedData?.grupo_id) {
       return null;
     }
 
-    return loadGroupById(data.grupo_id);
+    return loadGroupById(invitedData.grupo_id);
   },
 
   async getForUser(userId: string, userEmail: string, userRole?: AppUserRole): Promise<FamilyGroup | null> {
@@ -325,16 +370,20 @@ export const familyGroupService = {
       return ownerGroup;
     }
 
+    const memberGroupByUserId = await getByMemberUserId(userId);
+    if (memberGroupByUserId) {
+      return memberGroupByUserId;
+    }
+
     const memberGroup = await this.getByMemberEmail(userEmail);
     if (memberGroup) {
       return memberGroup;
     }
 
-    // Caregiver view must be driven by active links only. Historical accepted
-    // requests or shared resources can remain after unlink and should not
-    // recreate the family in UI.
+    // Caregiver view should avoid accepted-request history, but still recover
+    // family linkage from currently active shared resources.
     if (userRole === "familiar_cuidador") {
-      return null;
+      return getFallbackGroupFromSharedResources(userId, userEmail);
     }
 
     const acceptedRequestFallback = await getFallbackGroupFromAcceptedRequests(userId, userEmail);

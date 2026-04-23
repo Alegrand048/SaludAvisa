@@ -5,9 +5,16 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync",
+    "mobile:build": "npm run build && npm run cap:sync",
+    "mobile:android": "npm run mobile:build && npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/ios": "^7.4.3",
     "@radix-ui/react-dialog": "1.1.6",
     "@radix-ui/react-label": "2.1.2",
     "@radix-ui/react-slot": "1.1.2",
@@ -22,11 +29,13 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.4.3",
     "@tailwindcss/vite": "4.1.12",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "4.7.0",
     "tailwindcss": "4.1.12",
+    "typescript": "^6.0.2",
     "vite": "6.3.5"
   },
   "peerDependencies": {

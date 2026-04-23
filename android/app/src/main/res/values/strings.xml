@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SaludAvisa</string>
+    <string name="title_activity_main">SaludAvisa</string>
+    <string name="package_name">com.saludavisa.app</string>
+    <string name="custom_url_scheme">com.saludavisa.app</string>
+</resources>

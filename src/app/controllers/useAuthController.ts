@@ -17,10 +17,10 @@ export function useControladorAutenticacion() {
       setIsLoading(true);
       limpiarMensajes();
       await authService.signIn(email, password);
-      setMessage("Inicio de sesion correcto.");
+      setMessage("Inicio de sesión correcto.");
       return true;
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "No se pudo iniciar sesion.");
+      setError(authError instanceof Error ? authError.message : "No se pudo iniciar sesión.");
       return false;
     } finally {
       setIsLoading(false);
@@ -47,7 +47,7 @@ export function useControladorAutenticacion() {
       setIsLoading(true);
       limpiarMensajes();
       await authService.resetPassword(email);
-      setMessage("Te hemos enviado un correo para restablecer la contrasena.");
+      setMessage("Te hemos enviado un correo para restablecer la contraseña.");
       return true;
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "No se pudo enviar el correo.");
@@ -64,7 +64,7 @@ export function useControladorAutenticacion() {
       await authService.verifyPassword(password);
       return { ok: true };
     } catch (authError) {
-      const errorMessage = authError instanceof Error ? authError.message : "Contrasena inválida.";
+      const errorMessage = authError instanceof Error ? authError.message : "Contraseña inválida.";
       setError(errorMessage);
       return { ok: false, errorMessage };
     } finally {

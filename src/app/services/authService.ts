@@ -5,7 +5,7 @@ import { projectId } from "../../../utils/supabase/info";
 function normalizeSupabaseErrorMessage(message: string): string {
   const normalized = message.toLowerCase();
   if (normalized.includes("failed to fetch") || normalized.includes("networkerror") || normalized.includes("load failed")) {
-    return "No se pudo conectar con Supabase. Verifica Internet, project URL/KEY y que el proyecto este activo.";
+    return `No se pudo conectar con Supabase. Verifica Internet, project URL/KEY y que el proyecto este activo.\n\nDetalle tecnico: ${message}`;
   }
   return message;
 }

@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, createHashRouter } from "react-router";
 import Welcome from "./pages/Welcome";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -8,7 +8,7 @@ import Appointments from "./pages/Appointments";
 import Profile from "./pages/Profile";
 import { GuestOnly, RequireAuth } from "./components/RouteGuards";
 
-export const router = createBrowserRouter([
+const routeConfig = [
   {
     Component: GuestOnly,
     children: [
@@ -47,4 +47,11 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+];
+
+const isCapacitorRuntime =
+  typeof window !== "undefined" && Boolean((window as Window & { Capacitor?: unknown }).Capacitor);
+
+export const router = isCapacitorRuntime
+  ? createHashRouter(routeConfig)
+  : createBrowserRouter(routeConfig);

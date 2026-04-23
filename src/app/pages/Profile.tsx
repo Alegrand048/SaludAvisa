@@ -156,8 +156,8 @@ export default function Profile() {
   const isFamilyRole = role === "familiar_cuidador";
 
   const styleOptions: Array<{ value: StylePreference; label: string; description: string }> = [
-    { value: "senior-clean", label: "Cliente limpio", description: "Mayor contraste y lectura grande" },
-    { value: "care-modern", label: "Moderno cuidador", description: "Tarjetas modernas y enfoque productivo" },
+    { value: "senior-clean", label: "Senior", description: "Mayor contraste y lectura grande" },
+    { value: "care-modern", label: "Cuidador", description: "Tarjetas modernas y enfoque productivo" },
   ];
 
   const textSizeOptions: Array<{ value: TextSizePreference; label: string; description: string }> = [
@@ -793,9 +793,9 @@ export default function Profile() {
             <div className="flex items-center gap-3">
               <SlidersHorizontal className="size-5 text-primary" />
               <div>
-                <p className="text-base font-semibold text-foreground text-left">Ajustes</p>
+                <p className="text-base font-semibold text-foreground text-left">Configuración</p>
                 <p className="text-xs text-muted-foreground text-left">
-                  {effectiveStyle === "senior-night" ? "Cliente limpio (noche)" : effectiveStyle === "care-night" ? "Moderno cuidador (noche)" : effectiveStyle === "senior-clean" ? "Cliente limpio" : "Moderno cuidador"} · Tamaño {effectiveTextSize === "large" ? "grande" : "normal"}
+                  {effectiveStyle === "senior-night" ? "Senior Noche" : effectiveStyle === "care-night" ? "Cuidador Noche" : effectiveStyle === "senior-clean" ? "Senior" : "Cuidador"} · Tamaño {effectiveTextSize === "large" ? "Grande" : "Normal"}
                 </p>
               </div>
             </div>
@@ -923,7 +923,7 @@ export default function Profile() {
               />
             </div>
 
-            <p className="text-xs text-muted-foreground">Se pedirá tu contrasena al guardar.</p>
+            <p className="text-xs text-muted-foreground">Se pedirá tu contraseña al guardar.</p>
 
             {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
 
@@ -962,18 +962,18 @@ export default function Profile() {
 
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Para guardar cambios en tu perfil, introduce tu contrasena.
+              Para guardar cambios en tu perfil, introduce tu contraseña.
             </p>
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground" htmlFor="confirm-password-input">
-                Contrasena
+                Contraseña
               </label>
               <Input
                 id="confirm-password-input"
                 type="password"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Tu contrasena"
+                placeholder="Tu contraseña"
               />
             </div>
 
@@ -992,9 +992,9 @@ export default function Profile() {
       </Dialog>
 
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent className="rounded-3xl border-border/70 bg-background/95 p-4 sm:p-5">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border-border/70 bg-background/95 p-4 sm:p-5">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-foreground">Ajustes de apariencia</DialogTitle>
+            <DialogTitle className="text-lg font-semibold text-foreground">Configuración y ajustes</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -1045,7 +1045,7 @@ export default function Profile() {
             </div>
 
             <Button type="button" className="w-full" onClick={() => setIsSettingsOpen(false)}>
-              Cerrar ajustes
+              Cerrar
             </Button>
           </div>
         </DialogContent>
@@ -1077,7 +1077,7 @@ export default function Profile() {
 
           {infoDialog === "support" ? (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                 Si tienes dudas con recordatorios, medicación o citas, puedes contactar con soporte en este horario.
               </p>
               <div className="rounded-2xl border border-border/70 bg-background/80 p-3 space-y-1">

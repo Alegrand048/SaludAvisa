@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Medication } from "../models/medication";
 import { medicationService } from "../services/medicationService";
+import { supabase } from "../services/supabaseClient";
 
 export function useControladorMedicacion() {
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -9,6 +10,8 @@ export function useControladorMedicacion() {
 
   useEffect(() => {
     let mounted = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
     const cargar = async () => {
       const [loaded, takenCountMap] = await Promise.all([
         medicationService.getAllAsync(),
@@ -20,9 +23,46 @@ export function useControladorMedicacion() {
         setIsLoading(false);
       }
     };
+
+    const scheduleRefresh = () => {
+      if (!mounted) {
+        return;
+      }
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+      refreshTimer = setTimeout(() => {
+        void cargar();
+      }, 150);
+    };
+
     cargar();
+
+    const channel = supabase
+      .channel(`medications-realtime-${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "medicamentos_usuario" },
+        scheduleRefresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "medicamentos_familia_compartidos" },
+        scheduleRefresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "registro_tomas_medicacion" },
+        scheduleRefresh,
+      )
+      .subscribe();
+
     return () => {
       mounted = false;
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+      void supabase.removeChannel(channel);
     };
   }, []);
 

@@ -92,6 +92,17 @@ function getNextPendingDoseMinutesDiff(times: string[], takenToday: number, now:
   return Math.round((slot.getTime() - now.getTime()) / 60000);
 }
 
+function countElapsedDosesByNow(times: string[], now: Date): number {
+  return [...times]
+    .sort()
+    .filter((time) => {
+      const [hour, minute] = time.split(":").map(Number);
+      const slot = new Date(now);
+      slot.setHours(hour, minute, 0, 0);
+      return slot.getTime() <= now.getTime();
+    }).length;
+}
+
 type MedicationFilter = "all" | "today" | "tomorrow" | "week";
 
 const FILTER_LABELS: Record<MedicationFilter, string> = {
@@ -266,15 +277,21 @@ export default function Medications() {
         </div>
 
         {visibleMedications.map((med) => {
-          const scheduledToday = getScheduledDoseCountForDate(med, new Date());
+          const now = new Date();
+          const scheduledToday = getScheduledDoseCountForDate(med, now);
           const takenToday = todayTakenCountMap[normalizeMedicationKey(med.id)] ?? 0;
-          const objectiveCompletedToday = scheduledToday > 0 && takenToday >= scheduledToday;
-          const nextPendingDoseDiff = getNextPendingDoseMinutesDiff(med.times, takenToday, new Date());
+          const elapsedToday = scheduledToday > 0 ? countElapsedDosesByNow(med.times, now) : 0;
+          const processedToday = scheduledToday > 0
+            ? Math.min(scheduledToday, elapsedToday + takenToday)
+            : 0;
+          const pendingToday = Math.max(0, scheduledToday - processedToday);
+          const objectiveCompletedToday = scheduledToday > 0 && pendingToday === 0;
+          const nextPendingDoseDiff = getNextPendingDoseMinutesDiff(med.times, processedToday, now);
           const hasLatePendingDose = scheduledToday > 0 && !objectiveCompletedToday && nextPendingDoseDiff !== null && nextPendingDoseDiff < 0;
           const statusLabel = objectiveCompletedToday
             ? "Objetivo de hoy completado"
             : scheduledToday > 0
-              ? `${scheduledToday - takenToday} toma(s) pendiente(s) hoy`
+              ? `${pendingToday} toma(s) pendiente(s) hoy`
               : "No toca hoy";
 
           return (
@@ -313,7 +330,7 @@ export default function Medications() {
                 <button
                   type="button"
                   className="w-full h-11 rounded-2xl border border-border/70 bg-card/85 text-sm font-semibold text-foreground shadow-sm disabled:opacity-60"
-                  disabled={pendingMedicationId === med.id || objectiveCompletedToday || scheduledToday === 0}
+                  disabled={pendingMedicationId === med.id || pendingToday === 0 || scheduledToday === 0}
                   onClick={async () => {
                     try {
                       setPendingMedicationId(med.id);

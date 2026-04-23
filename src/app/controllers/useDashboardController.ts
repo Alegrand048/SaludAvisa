@@ -51,8 +51,13 @@ function getSlotDate(baseDate: Date, time: string): Date {
   return date;
 }
 
+function countElapsedDosesByNow(times: string[], baseDate: Date, now: Date): number {
+  return [...times]
+    .sort()
+    .filter((time) => getSlotDate(baseDate, time).getTime() <= now.getTime()).length;
+}
+
 const APPOINTMENT_DELAY_WINDOW_MINUTES = 30;
-const MEDICATION_STALE_DELAY_MINUTES = 30;
 
 export function useControladorPanel() {
   const [version, setVersion] = useState(0);
@@ -125,9 +130,13 @@ export function useControladorPanel() {
           const isToday = isSameDay(baseDate, today);
           const takenToday = isToday ? todayTakenCountMap[normalizeMedicationBaseId(medication.id)] ?? 0 : 0;
           const sortedTimes = [...medication.times].sort();
+          const elapsedToday = isToday ? countElapsedDosesByNow(sortedTimes, baseDate, now) : 0;
+          const processedToday = isToday
+            ? Math.min(sortedTimes.length, elapsedToday + takenToday)
+            : 0;
 
           return sortedTimes.flatMap((time, index) => {
-            if (isToday && index < takenToday) {
+            if (isToday && index < processedToday) {
               return [];
             }
 
@@ -136,12 +145,7 @@ export function useControladorPanel() {
               return [];
             }
 
-            const diffMinutes = Math.round((date.getTime() - now.getTime()) / 60000);
-            if (diffMinutes < -MEDICATION_STALE_DELAY_MINUTES) {
-              return [];
-            }
-
-            if (!isToday && date < now) {
+            if (date <= now) {
               return [];
             }
 
@@ -149,14 +153,7 @@ export function useControladorPanel() {
           });
         }),
       )
-      .sort((a, b) => {
-        const aLate = a.date < now;
-        const bLate = b.date < now;
-        if (aLate !== bLate) {
-          return aLate ? -1 : 1;
-        }
-        return a.date.getTime() - b.date.getTime();
-      });
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
 
     const next = candidates[0];
     if (!next) {
@@ -169,8 +166,8 @@ export function useControladorPanel() {
       medication: next.medication,
       time: next.time,
       minutesUntil,
-      isLate: diffMinutes < 0,
-      lateMinutes: Math.abs(Math.min(0, diffMinutes)),
+      isLate: false,
+      lateMinutes: 0,
       timeLabel: formatearHora24a12(next.time),
     };
   }, [medications, todayTakenCountMap, timeTick]);

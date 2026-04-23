@@ -4,6 +4,7 @@ import { supabase } from "./supabaseClient";
 import { familyGroupService } from "./familyGroupService";
 
 const STORAGE_KEY = "saludavisa.medications";
+const TAKEN_COUNT_FALLBACK_KEY = "saludavisa.taken-count-fallback";
 const TABLE_NAME_ES = "medicamentos_usuario";
 const SHARED_TABLE = "medicamentos_familia_compartidos";
 const TAKEN_LOG_TABLE = "registro_tomas_medicacion";
@@ -69,6 +70,50 @@ export interface MedicationTakenLog {
 
 const seedMedications: Medication[] = [];
 
+type TakenFallbackByDay = Record<string, Record<string, number>>;
+
+function getLocalDayKey(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function readTakenFallbackByDay(): TakenFallbackByDay {
+  return readFromStorage<TakenFallbackByDay>(TAKEN_COUNT_FALLBACK_KEY, {});
+}
+
+function writeTakenFallbackByDay(value: TakenFallbackByDay): void {
+  writeToStorage(TAKEN_COUNT_FALLBACK_KEY, value);
+}
+
+function getTodayTakenFallbackMap(): Record<string, number> {
+  const all = readTakenFallbackByDay();
+  const todayKey = getLocalDayKey();
+  return all[todayKey] ?? {};
+}
+
+function rememberTakenFallbackCount(medicationId: string, minimumCount: number): void {
+  const normalizedId = normalizeMedicationId(medicationId);
+  const all = readTakenFallbackByDay();
+  const todayKey = getLocalDayKey();
+  const today = all[todayKey] ?? {};
+  const current = today[normalizedId] ?? 0;
+  today[normalizedId] = Math.max(current, minimumCount);
+
+  // Keep only recent keys to avoid unbounded growth in local storage.
+  const nextAll: TakenFallbackByDay = { ...all, [todayKey]: today };
+  const keys = Object.keys(nextAll).sort();
+  if (keys.length > 14) {
+    const keysToDelete = keys.slice(0, keys.length - 14);
+    for (const key of keysToDelete) {
+      delete nextAll[key];
+    }
+  }
+
+  writeTakenFallbackByDay(nextAll);
+}
+
 function isLegacyDemoMedication(medication: Medication): boolean {
   const normalizedName = medication.name.trim().toLowerCase();
   return (
@@ -122,8 +167,11 @@ function isMedicationObjectiveCompletedToday(
   todayTakenCountMap: Record<string, number>,
 ): boolean {
   const takenToday = todayTakenCountMap[normalizeMedicationKey(medicationId)] ?? 0;
-  const scheduledToday = countScheduledDosesForDate(medication, new Date());
-  return scheduledToday > 0 && takenToday >= scheduledToday;
+  const now = new Date();
+  const scheduledToday = countScheduledDosesForDate(medication, now);
+  const elapsedToday = countElapsedDosesByNow(medication.times, now);
+  const processedToday = Math.min(scheduledToday, elapsedToday + takenToday);
+  return scheduledToday > 0 && processedToday >= scheduledToday;
 }
 
 function removeByPossibleIds(items: Medication[], id: string): Medication[] {
@@ -304,6 +352,17 @@ function countScheduledDosesForDate(medication: { times: string[]; daysOfWeek?: 
   return isMedicationAllowedOnDate(medication, date) ? medication.times.length : 0;
 }
 
+function countElapsedDosesByNow(times: string[], now: Date): number {
+  return [...times]
+    .sort()
+    .filter((time) => {
+      const [hour, minute] = time.split(":").map(Number);
+      const slot = new Date(now);
+      slot.setHours(hour, minute, 0, 0);
+      return slot.getTime() <= now.getTime();
+    }).length;
+}
+
 function isSchemaColumnError(message: string): boolean {
   const text = message.toLowerCase();
   return text.includes("column") && (text.includes("does not exist") || text.includes("unknown"));
@@ -447,12 +506,13 @@ async function insertTakenLog(entry: {
   stock_restante: number;
   completado: boolean;
   registrado_por_email?: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
   const { error } = await supabase.from(TAKEN_LOG_TABLE).insert(entry);
   if (error) {
-    // Do not block marking as taken if logging table is missing or unavailable.
-    return;
+    return false;
   }
+
+  return true;
 }
 
 async function getAllFromRemoteOrLocal(): Promise<Medication[]> {
@@ -540,7 +600,8 @@ export const medicationService = {
         return this.getAllAsync();
       }
 
-      await insertTakenLog({
+      const knownTakenCount = todayTakenCountMap[sharedId] ?? 0;
+      const logSaved = await insertTakenLog({
         medicamento_id: sharedId,
         creador_usuario_id: sharedRow?.creador_usuario_id ?? null,
         cliente_email: (sharedRow?.cliente_email ?? user.email).toLowerCase(),
@@ -551,6 +612,10 @@ export const medicationService = {
         completado: true,
         registrado_por_email: user.email,
       });
+
+      if (!logSaved) {
+        rememberTakenFallbackCount(sharedId, knownTakenCount + 1);
+      }
 
       const nextStock = Math.max(0, Number(sharedRow?.stock ?? 0) - 1);
       const { error: sharedError } = await supabase
@@ -598,7 +663,8 @@ export const medicationService = {
       return this.getAllAsync();
     }
 
-    await insertTakenLog({
+    const knownTakenCount = todayTakenCountMap[id] ?? 0;
+    const logSaved = await insertTakenLog({
       medicamento_id: id,
       creador_usuario_id: ownRow?.usuario_id ?? user.id,
       cliente_email: user.email.toLowerCase(),
@@ -609,6 +675,10 @@ export const medicationService = {
       completado: true,
       registrado_por_email: user.email,
     });
+
+    if (!logSaved) {
+      rememberTakenFallbackCount(id, knownTakenCount + 1);
+    }
 
     const nextStock = Math.max(0, Number(ownRow?.stock ?? 0) - 1);
     const { error: esError } = await supabase
@@ -802,13 +872,21 @@ export const medicationService = {
     const { data, error } = await query;
 
     if (error || !data) {
-      return {};
+      return getTodayTakenFallbackMap();
     }
 
-    return (data as Array<{ medicamento_id: string }>).reduce<Record<string, number>>((acc, row) => {
+    const dbMap = (data as Array<{ medicamento_id: string }>).reduce<Record<string, number>>((acc, row) => {
       acc[row.medicamento_id] = (acc[row.medicamento_id] ?? 0) + 1;
       return acc;
     }, {});
+
+    const fallbackMap = getTodayTakenFallbackMap();
+    const merged: Record<string, number> = { ...dbMap };
+    for (const [medicationId, fallbackCount] of Object.entries(fallbackMap)) {
+      merged[medicationId] = Math.max(merged[medicationId] ?? 0, fallbackCount);
+    }
+
+    return merged;
   },
 
   async getTakenLogsForMonthAsync(year: number, monthIndex: number): Promise<MedicationTakenLog[]> {

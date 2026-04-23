@@ -56,6 +56,14 @@ function weekdayCode(date: Date): string {
   return ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][date.getDay()] ?? "mon";
 }
 
+function getTodayLocalDateIso(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function AddMedicationDialog({
   open,
   onClose,
@@ -76,7 +84,7 @@ export function AddMedicationDialog({
   const [times, setTimes] = useState<string[]>(["08:00"]);
   const [daysOfWeek, setDaysOfWeek] = useState<string[]>(DAYS_OF_WEEK.map((day) => day.value));
   const [durationDays, setDurationDays] = useState("30");
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(() => getTodayLocalDateIso());
   const [singleDayMode, setSingleDayMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sugerencias, setSugerencias] = useState<SugerenciaMedicamentoCima[]>([]);
@@ -94,7 +102,7 @@ export function AddMedicationDialog({
     setTimes(["08:00"]);
     setDaysOfWeek(DAYS_OF_WEEK.map((day) => day.value));
     setDurationDays("30");
-    setStartDate(new Date().toISOString().slice(0, 10));
+    setStartDate(getTodayLocalDateIso());
     setSingleDayMode(false);
     setSugerencias([]);
     setErrorSugerencias(null);
@@ -148,7 +156,7 @@ export function AddMedicationDialog({
     setVecesAlDia(initialValues.times.length > 0 ? initialValues.times.length : 1);
     setDaysOfWeek(initialValues.daysOfWeek && initialValues.daysOfWeek.length > 0 ? initialValues.daysOfWeek : DAYS_OF_WEEK.map((day) => day.value));
     setDurationDays(String(initialValues.durationDays ?? 30));
-    setStartDate(initialValues.startDate ?? new Date().toISOString().slice(0, 10));
+    setStartDate(initialValues.startDate ?? getTodayLocalDateIso());
     setSingleDayMode((initialValues.durationDays ?? 30) === 1);
     setSubmitError(null);
   }, [open, initialValues]);

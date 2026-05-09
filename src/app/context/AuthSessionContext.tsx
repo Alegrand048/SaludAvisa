@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../services/supabaseClient";
+import { authService } from "../services/authService";
 import { familyGroupService } from "../services/familyGroupService";
 
 export type UserRole = "usuario" | "familiar_cuidador";
@@ -85,6 +86,43 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
     void familyGroupService.acceptPendingInvitations(user.id, user.email);
   }, [session?.user?.id, session?.user?.email]);
+
+  // Validate user still exists in database (not deleted)
+  useEffect(() => {
+    if (!session?.user?.id) {
+      return;
+    }
+
+    let isMounted = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const validateUserExists = async () => {
+      try {
+        await authService.verifyUserExists();
+      } catch (error) {
+        if (isMounted) {
+          // User doesn't exist or was deleted - session will be cleared by the verifyUserExists function
+          setSession(null);
+        }
+      }
+
+      // Check again after 5 minutes
+      if (isMounted) {
+        timeoutId = setTimeout(validateUserExists, 5 * 60 * 1000);
+      }
+    };
+
+    // Initial validation after a short delay to allow auth to settle
+    const initialTimeoutId = setTimeout(validateUserExists, 500);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(initialTimeoutId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [session?.user?.id]);
 
   const value = useMemo<AuthSessionContextValue>(() => {
     const user = session?.user ?? null;

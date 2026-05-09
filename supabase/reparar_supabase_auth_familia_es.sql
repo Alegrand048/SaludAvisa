@@ -69,6 +69,13 @@ begin
   values (new.id)
   on conflict (usuario_id) do nothing;
 
+  update public.miembros_familia
+  set usuario_id = new.id,
+      estado = 'activo',
+      actualizado_en = now()
+  where lower(email) = lower(coalesce(new.email, ''))
+    and (usuario_id is null or usuario_id = new.id);
+
   return new;
 end;
 $$;
@@ -206,8 +213,11 @@ using (
     select 1
     from public.miembros_familia mf
     where mf.grupo_id = grupos_familiares.id
-      and mf.usuario_id = auth.uid()
       and mf.estado = 'activo'
+      and (
+        mf.usuario_id = auth.uid()
+        or lower(mf.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+      )
   )
 );
 
@@ -217,6 +227,7 @@ on public.miembros_familia
 for select
 using (
   usuario_id = auth.uid()
+  or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
   or exists (
     select 1 from public.grupos_familiares gf
     where gf.id = miembros_familia.grupo_id and gf.propietario_id = auth.uid()

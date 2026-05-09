@@ -65,6 +65,8 @@ interface JoinRequestRow {
 interface ProfileNameRow {
   email: string;
   nombre_completo: string | null;
+  avatar_url?: string | null;
+  avatar_emoji?: string | null;
 }
 
 export interface MemberProfileSummary {
@@ -78,6 +80,16 @@ interface FamilyMember {
   email: string;
   role: RolFamiliar;
   status: "invitado" | "activo";
+}
+
+interface MyFamilyGroupRpcRow {
+  grupo_id: string;
+  propietario_id: string;
+  propietario_email: string;
+  creado_en: string;
+  email: string;
+  rol: RolFamiliarLegacy;
+  estado: "invitado" | "activo";
 }
 
 function normalizeEmail(email: string): string {
@@ -132,6 +144,42 @@ function mapGroup(row: FamilyGroupRow, members: FamilyMemberRow[]): FamilyGroup 
   };
 }
 
+async function loadGroupFromRpc(userEmail: string): Promise<FamilyGroup | null> {
+  const { data, error } = await supabase.rpc("api_obtener_mi_grupo_familiar", {
+    p_email: normalizeEmail(userEmail),
+  });
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (error.code === "42883" || message.includes("does not exist") || message.includes("could not find the function")) {
+      return null;
+    }
+    return null;
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return null;
+  }
+
+  const rows = data as MyFamilyGroupRpcRow[];
+  const first = rows[0];
+  const members: FamilyMemberRow[] = rows.map((row) => ({
+    email: row.email,
+    rol: row.rol,
+    estado: row.estado,
+  }));
+
+  return mapGroup(
+    {
+      id: first.grupo_id,
+      propietario_id: first.propietario_id,
+      propietario_email: first.propietario_email,
+      creado_en: first.creado_en,
+    },
+    members,
+  );
+}
+
 function mapJoinRequest(row: JoinRequestRow): JoinRequest {
   return {
     id: row.id,
@@ -171,6 +219,44 @@ async function getFallbackGroupFromAcceptedRequests(userId: string, userEmail: s
   }
 
   const relatedRows = rows.filter((row) => normalizeEmail(row.cliente_email) === ownerEmail);
+
+  // Validate that there are still active shared resources before resurrecting the family group
+  const hasActiveResources = await (async () => {
+    const [medResult, aptResult] = await Promise.all([
+      supabase
+        .from(SHARED_MEDICATIONS_TABLE)
+        .select("id")
+        .eq("cliente_email", ownerEmail)
+        .eq("activa", true)
+        .limit(1),
+      supabase
+        .from(SHARED_APPOINTMENTS_TABLE)
+        .select("id")
+        .eq("cliente_email", ownerEmail)
+        .eq("activa", true)
+        .limit(1),
+    ]);
+    const hasActiveMeds = !medResult.error && medResult.data && medResult.data.length > 0;
+    const hasActiveAppts = !aptResult.error && aptResult.data && aptResult.data.length > 0;
+    return hasActiveMeds || hasActiveAppts;
+  })();
+
+  // Only return fallback group if there are still active resources
+  if (!hasActiveResources) {
+    return null;
+  }
+
+  // Validate that the client profile still exists
+  const { data: clientProfile } = await supabase
+    .from("perfiles")
+    .select("usuario_id")
+    .ilike("email", ownerEmail)
+    .maybeSingle();
+
+  if (!clientProfile) {
+    // Client doesn't exist - group was deleted
+    return null;
+  }
 
   const members: MiembroFamiliar[] = [
     {
@@ -230,6 +316,18 @@ async function getFallbackGroupFromSharedResources(userId: string, userEmail: st
 
   const ownerEmail = Array.from(sharedClientEmails)[0];
   if (!ownerEmail) {
+    return null;
+  }
+
+  // Validate that the client profile still exists
+  const { data: clientProfile } = await supabase
+    .from("perfiles")
+    .select("usuario_id")
+    .ilike("email", ownerEmail)
+    .maybeSingle();
+
+  if (!clientProfile) {
+    // Client doesn't exist - group was deleted
     return null;
   }
 
@@ -365,6 +463,11 @@ export const familyGroupService = {
   },
 
   async getForUser(userId: string, userEmail: string, userRole?: AppUserRole): Promise<FamilyGroup | null> {
+    const rpcGroup = await loadGroupFromRpc(userEmail);
+    if (rpcGroup) {
+      return rpcGroup;
+    }
+
     const ownerGroup = await this.getByOwner(userId);
     if (ownerGroup) {
       return ownerGroup;
@@ -380,18 +483,10 @@ export const familyGroupService = {
       return memberGroup;
     }
 
-    // Caregiver view should avoid accepted-request history, but still recover
-    // family linkage from currently active shared resources.
-    if (userRole === "familiar_cuidador") {
-      return getFallbackGroupFromSharedResources(userId, userEmail);
-    }
-
-    const acceptedRequestFallback = await getFallbackGroupFromAcceptedRequests(userId, userEmail);
-    if (acceptedRequestFallback) {
-      return acceptedRequestFallback;
-    }
-
-    return getFallbackGroupFromSharedResources(userId, userEmail);
+    // No fallback from historical requests/shared resources:
+    // only real active group rows should be shown.
+    void userRole;
+    return null;
   },
 
   async acceptPendingInvitations(userId: string, email: string): Promise<void> {

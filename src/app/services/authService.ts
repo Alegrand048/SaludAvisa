@@ -10,6 +10,25 @@ function normalizeSupabaseErrorMessage(message: string): string {
   return message;
 }
 
+// Funciones independientes sin `this`
+async function validarContraseniaDirecta(password: string) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.email) {
+    throw new Error("No hay una sesion activa.");
+  }
+
+  const { error: reauthError } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password,
+  });
+  if (reauthError) {
+    throw new Error("Contrasena incorrecta.");
+  }
+}
+
 export const servicioAutenticacion = {
   async iniciarSesion(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -89,25 +108,11 @@ export const servicioAutenticacion = {
   },
 
   async validarContrasena(password: string) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user?.email) {
-      throw new Error("No hay una sesion activa.");
-    }
-
-    const { error: reauthError } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password,
-    });
-    if (reauthError) {
-      throw new Error("Contrasena incorrecta.");
-    }
+    await validarContraseniaDirecta(password);
   },
 
   async actualizarNombreSeguro(password: string, name: string) {
-    await this.validarContrasena(password);
+    await validarContraseniaDirecta(password);
     const cleanedName = name.trim();
     if (!cleanedName) {
       throw new Error("El nombre no puede estar vacío.");
@@ -145,7 +150,7 @@ export const servicioAutenticacion = {
   },
 
   async eliminarCuentaActual(password: string) {
-    await this.validarContrasena(password);
+    await validarContraseniaDirecta(password);
 
     const { error: deleteError } = await supabase.rpc("eliminar_mi_cuenta");
     if (!deleteError) {
@@ -174,6 +179,33 @@ export const servicioAutenticacion = {
 
     throw new Error(`No se pudo borrar la cuenta: ${deleteError.message}`);
   },
+
+  async verificarUsuarioExiste() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user?.id) {
+      throw new Error("No hay una sesion activa.");
+    }
+
+    // Verify user profile exists in database (indicates user hasn't been deleted)
+    const { data: perfil, error: perfilError } = await supabase
+      .from("perfiles")
+      .select("usuario_id")
+      .eq("usuario_id", user.id)
+      .maybeSingle();
+
+    if (perfilError) {
+      throw new Error(normalizeSupabaseErrorMessage(perfilError.message));
+    }
+
+    if (!perfil) {
+      // User profile doesn't exist - user was likely deleted
+      await supabase.auth.signOut();
+      throw new Error("Tu cuenta ha sido eliminada. Por favor, inicia sesión nuevamente.");
+    }
+  },
 };
 
 export const authService = {
@@ -183,4 +215,5 @@ export const authService = {
   verifyPassword: servicioAutenticacion.validarContrasena,
   updateDisplayNameSecure: servicioAutenticacion.actualizarNombreSeguro,
   deleteAccount: servicioAutenticacion.eliminarCuentaActual,
+  verifyUserExists: servicioAutenticacion.verificarUsuarioExiste,
 };
